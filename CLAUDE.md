@@ -31,7 +31,7 @@ src/
   middlewares/     notFound, errorHandler, validate (zod), auth (authenticate, authorize), rateLimit
   validators/      zod request schemas
   services/        talks to external services: email/, sms/ (swappable drivers), google, OTP issuing
-  utils/           ApiError, asyncHandler, password, token, otp, session
+  utils/           ApiError, asyncHandler, password, token, otp, session, slug, sqlUpdate
   db/migrations/   timestamped .sql migration files
 scripts/migrate.js migration runner
 scripts/create-admin.js  creates the first admin
