@@ -10,6 +10,8 @@ npm start                           # start
 npm run migrate                     # apply pending migrations
 npm run migrate:status              # list applied / pending migrations
 npm run migrate:create <name>       # create src/db/migrations/<timestamp>_<name>.sql
+npm run create-admin                # create the first admin
+npm test                            # API tests; needs TEST_DATABASE_URL, a migrated database whose data it WIPES
 ```
 
 Health check: `GET /api/health` (200 when Postgres is reachable, 503 otherwise).
@@ -26,9 +28,14 @@ src/
   routes/          URL -> controller; index.js combines all routers
   controllers/     request/response handling, calls models
   models/          SQL queries only (via config/db query())
-  middlewares/     notFound, errorHandler
+  middlewares/     notFound, errorHandler, validate (zod), auth (authenticate, authorize), rateLimit
+  validators/      zod request schemas
+  services/        talks to external services: email/, sms/ (swappable drivers), google, OTP issuing
+  utils/           ApiError, asyncHandler, password, token, otp, session
   db/migrations/   timestamped .sql migration files
 scripts/migrate.js migration runner
+scripts/create-admin.js  creates the first admin
+tests/             API tests (node:test)
 docs/DATABASE.md   database schema documentation
 plans/             feature plans (e.g. authentication-plan.md)
 ```
