@@ -10,7 +10,7 @@
     "migrate:status": "node --env-file-if-exists=.env scripts/migrate.js status",
     "migrate:create": "node scripts/migrate.js create",
     "create-admin": "node --env-file-if-exists=.env scripts/create-admin.js",
-    "test": "node --env-file-if-exists=.env --test \"tests/**/*.test.js\""
+    "test": "node --env-file-if-exists=.env --test --test-concurrency=1 \"tests/**/*.test.js\""
   },
   "keywords": [],
   "author": "BHUPESH SHARMA",

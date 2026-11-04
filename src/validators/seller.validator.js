@@ -2,7 +2,7 @@
 
 const { z } = require("zod");
 
-const url = z.url("Enter a valid URL");
+const url = z.httpUrl("Enter a valid http or https URL");
 const description = z.string().trim();
 const supportEmail = z.string().trim().toLowerCase().max(255).pipe(z.email("Enter a valid email address"));
 const supportPhone = z.string().trim().regex(/^\+[1-9][0-9]{6,14}$/, "Phone must be in E.164 format");

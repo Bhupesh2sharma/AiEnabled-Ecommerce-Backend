@@ -4,15 +4,7 @@
 const { after, before, beforeEach, test } = require("node:test");
 const assert = require("node:assert/strict");
 
-const testDatabaseUrl = process.env.TEST_DATABASE_URL;
-if (!testDatabaseUrl || testDatabaseUrl === process.env.DATABASE_URL) {
-  throw new Error("Set TEST_DATABASE_URL to a disposable database (not DATABASE_URL). Its data is wiped.");
-}
-process.env.DATABASE_URL = testDatabaseUrl;
-process.env.BCRYPT_SALT_ROUNDS = "4";
-process.env.EMAIL_DRIVER = "console";
-process.env.SMS_DRIVER = "console";
-process.env.GOOGLE_CLIENT_ID = "test-client";
+require("./testEnv");
 
 const jwt = require("jsonwebtoken");
 const app = require("../src/app");

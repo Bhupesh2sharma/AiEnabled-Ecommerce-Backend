@@ -196,7 +196,7 @@ Public sends only go out in these cases:
 
 ## Rate limits
 
-Limits apply per IP, on `/api/auth` routes only. IPv6 clients are grouped by /56 range.
+Limits apply per IP. This table covers `/api/auth` routes; public catalog limits are in [CATALOG.md](CATALOG.md). IPv6 clients are grouped by /56 range.
 
 | Limit | Allowed | Routes |
 |---|---|---|

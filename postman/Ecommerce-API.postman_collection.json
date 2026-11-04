@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Ecommerce API",
-    "description": "Ecommerce backend API. Import this one file; no separate environment is needed.\n\n**Before you start:** run the backend (`npm run dev`). For the admin folder, create the first admin with `npm run create-admin`, then set `adminEmail` and `adminPassword` on the collection's Variables tab.\n\n**Automatic:** login and signup requests save `accessToken`, and the refresh token is kept by Postman's cookie jar. Seller profile requests save `sellerProfileId`.\n\n**By hand:** OTP codes print in the server terminal while `EMAIL_DRIVER` and `SMS_DRIVER` are `console`. Copy each into the `otpCode` variable before sending the request that needs it.\n\n**Errors** look like `{ \"message\": \"...\", \"code\": \"...\", \"details\": [...] }`. `code` and `details` are not always present.\n\n**Rate limits** (per IP, all /auth routes): 300 requests per 15 min, 30 failed login or code attempts per 15 min, 20 signups per hour, 20 OTP sends per hour. Over the limit returns 429 `RATE_LIMITED` with `Retry-After`. Restarting the server resets them.",
+    "description": "Ecommerce backend API. Import this one file; no separate environment is needed.\n\n**Before you start:** run the backend (`npm run dev`). For the admin folder, create the first admin with `npm run create-admin`, then set `adminEmail` and `adminPassword` on the collection's Variables tab.\n\n**Automatic:** login and signup requests save `accessToken`, and the refresh token is kept by Postman's cookie jar. Seller profile requests save `sellerProfileId`, and creating catalog items saves their ids.\n\n**By hand:** OTP codes print in the server terminal while `EMAIL_DRIVER` and `SMS_DRIVER` are `console`. Copy each into the `otpCode` variable before sending the request that needs it.\n\n**Errors** look like `{ \"message\": \"...\", \"code\": \"...\", \"details\": [...] }`. `code` and `details` are not always present.\n\n**Rate limits** (per IP, all /auth routes): 300 requests per 15 min, 30 failed login or code attempts per 15 min, 20 signups per hour, 20 OTP sends per hour. Over the limit returns 429 `RATE_LIMITED` with `Retry-After`. Restarting the server resets them.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -87,6 +87,46 @@
     },
     {
       "key": "sellerProfileId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "categoryName",
+      "value": "Sample Clothing",
+      "type": "string"
+    },
+    {
+      "key": "optionName",
+      "value": "Sample Size",
+      "type": "string"
+    },
+    {
+      "key": "brandName",
+      "value": "Sample Brand",
+      "type": "string"
+    },
+    {
+      "key": "categoryId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "subCategoryId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "optionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "valueId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "brandId",
       "value": "",
       "type": "string"
     }
@@ -1164,6 +1204,681 @@
           }
         ]
       }
+    },
+    {
+      "name": "Catalog",
+      "description": "Public catalog data. No login needed. 300 requests per minute per IP.",
+      "item": [
+        {
+          "name": "Get Category Tree",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "categories"
+              ]
+            },
+            "description": "Active categories as a tree. An inactive category hides everything below it.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Category Variant Options",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/categories/{{categoryId}}/variant-options",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "categories",
+                "{{categoryId}}",
+                "variant-options"
+              ]
+            },
+            "description": "Options and values a variant in this category can use, including those inherited from parents (`inherited: true`). 404 if the category or a parent is inactive.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Brands",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/brands?q=&page=1&limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "brands"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": ""
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Active brands by name. `q` finds names starting with it. `limit` is at most 100.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin Catalog",
+      "description": "Manage categories, brands and variant options. Uses `adminAccessToken`, so run Admin Log In first. Names and slugs must be unique, so change them when re-running. Run in order: creating saves the ids that later requests use.",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{adminAccessToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Create Category",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "categories"
+              ]
+            },
+            "description": "The slug is made from the name if not sent. Saves `categoryId`. 409 if the name or slug is taken.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{categoryName}}\",\n  \"description\": \"Sample category\",\n  \"defaultHsnCode\": \"6109\",\n  \"sortOrder\": 0,\n  \"isActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  pm.collectionVariables.set('categoryId', pm.response.json().category.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Sub-Category",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "categories"
+              ]
+            },
+            "description": "At most 3 levels (400 `CATEGORY_TOO_DEEP`). 409 `CATEGORY_HAS_PRODUCTS` if the parent has products. Saves `subCategoryId`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{categoryName}} Sub\",\n  \"parentId\": \"{{categoryId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  pm.collectionVariables.set('subCategoryId', pm.response.json().category.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Categories (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "categories"
+              ]
+            },
+            "description": "Every category as a flat list, including inactive ones."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Category",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/categories/{{categoryId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "categories",
+                "{{categoryId}}"
+              ]
+            },
+            "description": "Send only the fields to change; `null` clears an optional field. Change `parentId` to move it, or set `null` for the top level. `isActive: false` hides it and everything below it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Updated description\",\n  \"sortOrder\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Variant Option",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/variant-options",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "variant-options"
+              ]
+            },
+            "description": "The kind of choice a variant can have, such as Size. The code is made from the name if not sent and can't change later. `allowCustomValues` lets sellers type their own value. Saves `optionId`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{optionName}}\",\n  \"allowCustomValues\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  pm.collectionVariables.set('optionId', pm.response.json().option.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Variant Option",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/variant-options/{{optionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "variant-options",
+                "{{optionId}}"
+              ]
+            },
+            "description": "Only `name` and `allowCustomValues` can change. Sending `code` returns 400.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"allowCustomValues\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Variant Options",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/variant-options",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "variant-options"
+              ]
+            },
+            "description": "All options with their values."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Option Value",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/variant-options/{{optionId}}/values",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "variant-options",
+                "{{optionId}}",
+                "values"
+              ]
+            },
+            "description": "An allowed value such as Medium. The code is made from the label if not sent and can't change later. `colorHex` is an optional swatch. Saves `valueId`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"Medium\",\n  \"code\": \"m\",\n  \"sortOrder\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  pm.collectionVariables.set('valueId', pm.response.json().value.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Option Value",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/variant-options/{{optionId}}/values/{{valueId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "variant-options",
+                "{{optionId}}",
+                "values",
+                "{{valueId}}"
+              ]
+            },
+            "description": "`label`, `colorHex` and `sortOrder` can change. Sending `code` returns 400.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"Medium Fit\",\n  \"colorHex\": \"#FF0000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Set Category Variant Options",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/categories/{{categoryId}}/variant-options",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "categories",
+                "{{categoryId}}",
+                "variant-options"
+              ]
+            },
+            "description": "Replaces the options set directly on this category; inherited ones aren't affected. Sub-categories inherit these, and can override them. 400 `INVALID_OPTION` if an option doesn't exist. Send an empty list to remove them all.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"options\": [\n    {\n      \"optionId\": \"{{optionId}}\",\n      \"isRequired\": true,\n      \"sortOrder\": 0\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Brand",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/brands",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "brands"
+              ]
+            },
+            "description": "The slug is made from the name if not sent. Saves `brandId`. 409 if the name is taken.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{brandName}}\",\n  \"logoUrl\": \"https://cdn.example.com/logo.png\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  pm.collectionVariables.set('brandId', pm.response.json().brand.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Brand",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/brands/{{brandId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "brands",
+                "{{brandId}}"
+              ]
+            },
+            "description": "Send only the fields to change. `isActive: false` hides it from the public list.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Brands (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/brands?page=1&limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "brands"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "All brands, including inactive ones."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Option Value",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/variant-options/{{optionId}}/values/{{valueId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "variant-options",
+                "{{optionId}}",
+                "values",
+                "{{valueId}}"
+              ]
+            },
+            "description": "Soft delete. New variants can't use it; existing ones keep it. Returns 204."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Brand",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/brands/{{brandId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "brands",
+                "{{brandId}}"
+              ]
+            },
+            "description": "Soft delete. 409 `BRAND_IN_USE` if products use it. Returns 204."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Sub-Category",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/categories/{{subCategoryId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "categories",
+                "{{subCategoryId}}"
+              ]
+            },
+            "description": "Soft delete. Returns 204."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Category",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/categories/{{categoryId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "categories",
+                "{{categoryId}}"
+              ]
+            },
+            "description": "Soft delete. 409 `CATEGORY_HAS_CHILDREN` or `CATEGORY_HAS_PRODUCTS` if it's in use; deactivate it instead. Returns 204."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Variant Option",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/variant-options/{{optionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "variant-options",
+                "{{optionId}}"
+              ]
+            },
+            "description": "Soft delete. 409 `OPTION_IN_USE` while a live category uses it. Returns 204."
+          },
+          "response": []
+        }
+      ]
     }
   ]
 }

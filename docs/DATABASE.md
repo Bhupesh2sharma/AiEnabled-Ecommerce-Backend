@@ -285,6 +285,7 @@ Migration: `20261104135523_create_brands.sql`
 
 **Rules (enforced in application code, not the DB)**
 - When a seller types a brand name, reuse an existing match, otherwise create it.
+- A brand with live products can't be deleted.
 
 **Referenced by:** `products.brand_id`.
 
@@ -303,6 +304,7 @@ The kinds of choice a variant can have, such as Size, Colour or RAM.
 
 **Rules (enforced in application code, not the DB)**
 - `code` can't change after creation, because variants will store it.
+- An option used by a live category can't be deleted.
 
 **Referenced by:** `variant_option_values.option_id`, `category_variant_options.option_id`.
 
@@ -338,7 +340,7 @@ Which options each category uses.
 | `created_at` | TIMESTAMPTZ | no `updated_at` or soft delete; rows are removed when an admin changes the list |
 
 **Rules (enforced in application code, not the DB)**
-- A category uses its own options plus those of its parents.
+- A category uses its own options plus those of its parents. If both set the same option, the closest wins.
 
 ---
 

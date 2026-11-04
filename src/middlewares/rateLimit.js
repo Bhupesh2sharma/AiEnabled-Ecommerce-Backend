@@ -43,6 +43,13 @@ const limiters = {
     message: "Too many signups from this network. Try again later",
   }),
 
+  // Public catalog browsing. Much higher, because one page view makes several requests.
+  publicRead: createLimiter({
+    windowMs: MINUTE,
+    limit: 300,
+    message: "Too many requests. Try again shortly",
+  }),
+
   // Each request can cost a paid SMS or email, so requests count whether or not a code is sent.
   otpSend: createLimiter({
     windowMs: HOUR,

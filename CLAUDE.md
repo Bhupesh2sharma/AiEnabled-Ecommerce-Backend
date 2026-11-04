@@ -39,6 +39,7 @@ tests/             API tests (node:test)
 postman/          Postman collection (keep in sync with the API)
 docs/DATABASE.md   database schema documentation
 docs/AUTH.md       how authentication works
+docs/CATALOG.md    how the catalog works
 plans/             feature plans (e.g. authentication-plan.md)
 ```
 
@@ -68,6 +69,11 @@ The DB password contains `#`, which must be URL-encoded as `%23` in `DATABASE_UR
 
 `docs/AUTH.md` describes how auth works. Any change to auth behaviour, endpoints, limits, error codes or settings
 must update it in the same change.
+
+## Catalog: read and maintain `docs/CATALOG.md`
+
+`docs/CATALOG.md` describes how categories, brands and variant options work. Any change to catalog behaviour, endpoints,
+limits or error codes must update it in the same change.
 
 ## Postman collection
 
