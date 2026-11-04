@@ -423,7 +423,7 @@ What's actually bought. Every product has at least one; a product with no option
 - JSONB values must be sent with `JSON.stringify`, because the `pg` library turns a JavaScript array into a Postgres array.
 - `options` must match the category's options and allowed values.
 - `gst_rate` must be a current GST rate, and 0 for a seller with no GSTIN.
-- Stock changes only through one function that updates the variant and adds a `stock_movements` row in one transaction.
+- Stock changes only through `src/models/stock.model.js`, which updates the variant and adds a `stock_movements` row in one transaction.
 
 **Referenced by:** `product_images (variant_id, product_id)`, `stock_movements.variant_id`.
 
@@ -463,6 +463,9 @@ History of every stock change. Rows are only ever added.
 | `note` | VARCHAR(255) | |
 | `created_by` | UUID | FK → `users.id`, SET NULL |
 | `created_at` | TIMESTAMPTZ | no `updated_at` or soft delete |
+
+**Rules (enforced in application code, not the DB)**
+- `initial` is allowed only while a variant has no history. Only `correction` can remove stock.
 
 ---
 

@@ -3,6 +3,7 @@
 const { Router } = require("express");
 const product = require("../controllers/product.controller");
 const seller = require("../controllers/seller.controller");
+const stock = require("../controllers/stock.controller");
 const { authenticate, authorize } = require("../middlewares/auth");
 const { loadSellerProfile, requireNotSuspended } = require("../middlewares/sellerProfile");
 const validate = require("../middlewares/validate");
@@ -38,5 +39,14 @@ router.post(
 );
 router.patch("/variants/:id", canWrite, idParam, validate(schemas.updateVariant), asyncHandler(product.updateVariant));
 router.delete("/variants/:id", canWrite, idParam, asyncHandler(product.deleteVariant));
+
+router.post("/variants/:id/stock", canWrite, idParam, validate(schemas.changeStock), asyncHandler(stock.changeStock));
+router.get(
+  "/variants/:id/stock-movements",
+  canRead,
+  idParam,
+  validate(schemas.paging, "query"),
+  asyncHandler(stock.listMovements)
+);
 
 module.exports = router;

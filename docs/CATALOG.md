@@ -8,7 +8,7 @@ How categories, brands, variant options and sellers' products work. The code is 
 **Related:** [DATABASE.md](DATABASE.md) (tables), [AUTH.md](AUTH.md) (login and roles) and
 [the Postman collection](../postman/Ecommerce-API.postman_collection.json) (runnable requests).
 
-**Built so far:** categories, brands, variant options, and sellers creating, editing and deleting products and variants. Stock changes, images, publishing and public product browsing aren't built yet, so every new product stays a draft for now.
+**Built so far:** categories, brands, variant options, sellers creating, editing and deleting products and variants, and stock changes. Images, publishing and public product browsing aren't built yet, so every new product stays a draft for now.
 
 ## Categories
 
@@ -77,11 +77,31 @@ A product is the listing; a variant is what's actually bought, with its own pric
 | Discounts | Sellers lower `sellingPrice`. The percentage shown is worked out from `mrp` and `sellingPrice`, never stored |
 | GST | One of 0, 0.25, 1.5, 3, 5, 18 or 40. A seller with no GSTIN must use 0. A seller with one must state it when creating a variant |
 | SKU | Unique per seller, ignoring case. Two sellers can share one |
-| Stock | Starts at 0 and can't be set here; it gets its own endpoint with a history |
+| Stock | Starts at 0 and can't be set here; see "Stock" |
 | Limit | At most 100 variants per product |
 | Deleting | A published product must keep at least one variant. Deleting frees the SKU and options for reuse |
 
 `minPrice` on the product follows the lowest price among its live, active variants, and is `null` when there are none.
+
+### Stock
+
+Stock changes only through `POST /seller/variants/:id/stock`, and every change adds a row to its history, so stock always equals the sum of that history.
+
+```json
+{ "change": 50, "reason": "initial", "note": "First delivery" }
+```
+
+| Reason | Use | Change |
+|---|---|---|
+| `initial` | The first stock count; only allowed while the variant has no history | Positive |
+| `restock` | New stock arrived | Positive |
+| `correction` | Fixing a count, such as damaged or lost units | Positive or negative |
+
+- **Parallel changes:** each one is a single database update, so none get lost, and stock can't go below 0 however many arrive together.
+- **Limits:** one change is at most 10,000,000 either way, and stock can't exceed 1,000,000,000.
+- **Repeated requests aren't detected:** if a client sends the same restock twice, it's counted twice. Frontends should disable the button while a request is running. The history shows what happened, and a correction fixes it.
+- **Low stock:** variants return `isLowStock`, true at or below `lowStockThreshold` (default 5). Alerts aren't built yet.
+- **History:** kept with the variant and hidden from the API once the variant is deleted.
 
 ## Endpoints
 
@@ -116,6 +136,8 @@ All paths start with `/api`.
 | `POST /seller/products/:id/variants` | Seller | Add a variant |
 | `PATCH /seller/variants/:id` | Seller | Edit a variant |
 | `DELETE /seller/variants/:id` | Seller | Soft delete a variant |
+| `POST /seller/variants/:id/stock` | Seller | Change stock, with a reason |
+| `GET /seller/variants/:id/stock-movements` | Seller | Stock history, newest first; `page`, `limit` |
 
 Request bodies are in `src/validators/catalog.validator.js`, `src/validators/product.validator.js` and the Postman collection. Image and logo fields hold an `http` or `https` URL for now; uploads arrive with image storage.
 
@@ -142,6 +164,7 @@ Errors use the format in [AUTH.md](AUTH.md).
 | 400 | `PRICE_ABOVE_MRP` | Selling price is above MRP |
 | 400 | `GST_NOT_ALLOWED` | A seller with no GSTIN must use a GST rate of 0 |
 | 400 | `VARIANT_LIMIT_REACHED` | The product already has 100 variants |
+| 400 | `STOCK_LIMIT_REACHED` | Stock would go above 1,000,000,000 |
 | 403 | `SELLER_PROFILE_REQUIRED` | Create a store profile first |
 | 403 | `PROFILE_SUSPENDED` | A suspended seller can only read |
 | 404 | `NOT_FOUND` | The record doesn't exist, or belongs to another seller |
@@ -152,6 +175,8 @@ Errors use the format in [AUTH.md](AUTH.md).
 | 409 | `OPTION_IN_USE` | A category uses this option |
 | 409 | `VARIANTS_DONT_FIT_CATEGORY` | Edit or remove these variants before moving the product |
 | 409 | `LAST_VARIANT` | A published product must keep a variant |
+| 409 | `INSUFFICIENT_STOCK` | The change would take stock below 0 |
+| 409 | `INITIAL_STOCK_ALREADY_SET` | This variant already has history; use `restock` or `correction` |
 
 ## Where the code is
 
@@ -162,8 +187,9 @@ Errors use the format in [AUTH.md](AUTH.md).
 | `src/controllers/brand.controller.js`, `variantOption.controller.js` | Brands, options and values |
 | `src/models/category.model.js` | SQL, including inherited options |
 | `src/models/brand.model.js`, `variantOption.model.js` | SQL |
-| `src/controllers/product.controller.js` | Sellers' products and variants |
+| `src/controllers/product.controller.js`, `stock.controller.js` | Sellers' products, variants and stock |
 | `src/models/product.model.js`, `productVariant.model.js` | SQL |
+| `src/models/stock.model.js` | The only code that changes stock |
 | `src/middlewares/sellerProfile.js` | Requires a store, and refuses suspended sellers' changes |
 | `src/utils/variantOptions.js`, `gst.js` | Option checks and allowed GST rates |
 | `src/validators/catalog.validator.js`, `product.validator.js` | Request rules |

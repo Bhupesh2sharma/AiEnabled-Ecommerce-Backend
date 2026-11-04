@@ -609,6 +609,208 @@ test("a product can have at most 100 variants", async () => {
   assert.equal(res.body.code, "VARIANT_LIMIT_REACHED");
 });
 
+const changeStock = (variantId, body, token = sellerToken) => seller("POST", `/variants/${variantId}/stock`, body, token);
+const history = (variantId, query = "", token = sellerToken) =>
+  seller("GET", `/variants/${variantId}/stock-movements${query}`, undefined, token);
+const stockOf = async (id) =>
+  (await db.query("SELECT stock_quantity FROM product_variants WHERE id = $1", [id])).rows[0].stock_quantity;
+
+async function variantWithStock(quantity = 0) {
+  counter += 1;
+  const product = await makeProduct();
+  const variant = await makeVariant(product.id, { sku: `STOCK-${counter}` });
+  if (quantity) await changeStock(variant.id, { change: quantity, reason: "initial" });
+  return variant;
+}
+
+test("stock routes refuse visitors and non-sellers", async () => {
+  const customer = signAccessToken(await makeUser("customer"));
+  for (const [method, path] of [["POST", `/variants/${MISSING_ID}/stock`], ["GET", `/variants/${MISSING_ID}/stock-movements`]]) {
+    assert.equal((await api(method, `/seller${path}`)).status, 401);
+    assert.equal((await seller(method, path, undefined, customer)).status, 403);
+  }
+});
+
+test("changing stock updates the variant and records who did it", async () => {
+  const variant = await variantWithStock();
+  const me = (await api("GET", "/auth/me", { token: sellerToken })).body.user.id;
+
+  const res = await changeStock(variant.id, { change: 50, reason: "initial", note: "First delivery" });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.variant.stockQuantity, 50);
+  assert.equal(res.body.movement.change, 50);
+  assert.equal(res.body.movement.quantityAfter, 50);
+  assert.equal(res.body.movement.reason, "initial");
+  assert.equal(res.body.movement.note, "First delivery");
+  assert.equal(res.body.movement.createdBy, me);
+
+  const fetched = await seller("GET", `/products/${variant.productId}`);
+  assert.equal(fetched.body.product.variants[0].stockQuantity, 50);
+});
+
+test("stock changes refuse bad input", async () => {
+  const variant = await variantWithStock(10);
+  for (const bad of [
+    {},
+    { change: 5 },
+    { reason: "restock" },
+    { change: 0, reason: "restock" },
+    { change: 1.5, reason: "restock" },
+    { change: "5", reason: "restock" },
+    { change: 5, reason: "stolen" },
+    { change: 5, reason: "order" },
+    { change: 10000001, reason: "restock" },
+    { change: -10000001, reason: "correction" },
+    { change: -1, reason: "restock" },
+    { change: -1, reason: "initial" },
+    { change: 5, reason: "restock", note: "x".repeat(256) },
+    { change: 5, reason: "restock", quantityAfter: 999 },
+  ]) {
+    assert.equal((await changeStock(variant.id, bad)).status, 400, JSON.stringify(bad));
+  }
+  assert.equal(await stockOf(variant.id), 10);
+  assert.equal((await changeStock("not-a-uuid", { change: 1, reason: "restock" })).status, 400);
+});
+
+test("stock can't go below 0, and the error says how much there is", async () => {
+  const variant = await variantWithStock(5);
+  const res = await changeStock(variant.id, { change: -6, reason: "correction" });
+  assert.equal(res.status, 409);
+  assert.equal(res.body.code, "INSUFFICIENT_STOCK");
+  assert.match(res.body.message, /Only 5 in stock/);
+  assert.equal(await stockOf(variant.id), 5);
+  assert.equal((await history(variant.id)).body.pagination.total, 1);
+
+  assert.equal((await changeStock(variant.id, { change: -5, reason: "correction" })).body.variant.stockQuantity, 0);
+});
+
+test("stock has an upper limit, even for values that would overflow", async () => {
+  const variant = await variantWithStock();
+  await db.query("UPDATE product_variants SET stock_quantity = 2147483640 WHERE id = $1", [variant.id]);
+  const res = await changeStock(variant.id, { change: 100, reason: "restock" });
+  assert.equal(res.status, 400);
+  assert.equal(res.body.code, "STOCK_LIMIT_REACHED");
+  assert.equal(await stockOf(variant.id), 2147483640);
+});
+
+test("parallel additions are all counted", async () => {
+  const variant = await variantWithStock();
+  const results = await Promise.all(
+    Array.from({ length: 20 }, () => changeStock(variant.id, { change: 1, reason: "restock" }))
+  );
+  assert.ok(results.every((r) => r.status === 200));
+  assert.equal(await stockOf(variant.id), 20);
+  const after = results.map((r) => r.body.movement.quantityAfter).sort((a, b) => a - b);
+  assert.deepEqual(after, Array.from({ length: 20 }, (_, i) => i + 1));
+});
+
+test("parallel removals can't oversell the last units", async () => {
+  const variant = await variantWithStock(5);
+  const results = await Promise.all(
+    Array.from({ length: 12 }, () => changeStock(variant.id, { change: -1, reason: "correction" }))
+  );
+  assert.equal(results.filter((r) => r.status === 200).length, 5);
+  assert.equal(results.filter((r) => r.status === 409).length, 7);
+  assert.equal(await stockOf(variant.id), 0);
+});
+
+test("stock always equals the sum of its history", async () => {
+  const variant = await variantWithStock(100);
+  await Promise.all(
+    [5, -3, 7, -20, 1, -200, 9, -1].map((change) =>
+      changeStock(variant.id, { change, reason: change > 0 ? "restock" : "correction" })
+    )
+  );
+  const { rows } = await db.query(
+    "SELECT COALESCE(SUM(change), 0)::int AS total FROM stock_movements WHERE variant_id = $1",
+    [variant.id]
+  );
+  assert.equal(rows[0].total, await stockOf(variant.id));
+});
+
+test("the initial reason works once, even in parallel", async () => {
+  const first = await variantWithStock();
+  const results = await Promise.all(
+    Array.from({ length: 5 }, () => changeStock(first.id, { change: 10, reason: "initial" }))
+  );
+  assert.equal(results.filter((r) => r.status === 200).length, 1);
+  const refused = results.find((r) => r.status === 409);
+  assert.equal(refused.body.code, "INITIAL_STOCK_ALREADY_SET");
+  assert.equal(await stockOf(first.id), 10);
+  assert.equal((await history(first.id)).body.pagination.total, 1);
+
+  const second = await variantWithStock();
+  await changeStock(second.id, { change: 1, reason: "restock" });
+  assert.equal((await changeStock(second.id, { change: 1, reason: "initial" })).status, 409);
+});
+
+test("if the history can't be saved, the stock change is undone", async () => {
+  const StockModel = require("../src/models/stock.model");
+  const variant = await variantWithStock(5);
+  await assert.rejects(
+    db.transaction(async (client) => {
+      const changed = await StockModel.applyChange({ variantId: variant.id, sellerId: sellerProfileId, change: 3 }, client);
+      assert.equal(changed.stock_quantity, 8);
+      await StockModel.record({ variantId: variant.id, change: 0, quantityAfter: 8, reason: "restock", createdBy: null }, client);
+    })
+  );
+  assert.equal(await stockOf(variant.id), 5);
+});
+
+test("history is newest first, paged, and private to the seller", async () => {
+  const variant = await variantWithStock(1);
+  await changeStock(variant.id, { change: 2, reason: "restock" });
+  await changeStock(variant.id, { change: -1, reason: "correction", note: "Damaged" });
+
+  const all = await history(variant.id);
+  assert.equal(all.status, 200);
+  assert.deepEqual(all.body.movements.map((m) => m.change), [-1, 2, 1]);
+  assert.deepEqual(all.body.movements.map((m) => m.quantityAfter), [2, 3, 1]);
+  assert.equal(all.body.movements[0].note, "Damaged");
+  assert.deepEqual(all.body.pagination, { page: 1, limit: 50, total: 3 });
+
+  const page = await history(variant.id, "?limit=1&page=2");
+  assert.deepEqual(page.body.movements.map((m) => m.change), [2]);
+  assert.equal((await history(variant.id, "?limit=101")).status, 400);
+
+  assert.equal((await history(variant.id, "", otherToken)).status, 404);
+  assert.equal((await history(MISSING_ID)).status, 404);
+});
+
+test("another seller's or a deleted variant's stock can't be changed", async () => {
+  const variant = await variantWithStock(5);
+  const body = { change: 1, reason: "restock" };
+  assert.equal((await changeStock(variant.id, body, otherToken)).status, 404);
+  assert.equal((await changeStock(MISSING_ID, body)).status, 404);
+  assert.equal(await stockOf(variant.id), 5);
+
+  await seller("DELETE", `/variants/${variant.id}`);
+  assert.equal((await changeStock(variant.id, body)).status, 404);
+  assert.equal((await history(variant.id)).status, 404);
+  assert.equal(await stockOf(variant.id), 5);
+});
+
+test("a suspended seller can read history but not change stock", async () => {
+  const suspended = await makeSeller();
+  const product = await makeProduct({}, suspended.token);
+  const variant = await makeVariant(product.id, {}, suspended.token);
+  await changeStock(variant.id, { change: 1, reason: "initial" }, suspended.token);
+  await db.query("UPDATE seller_profiles SET verification_status = 'suspended' WHERE id = $1", [suspended.profileId]);
+
+  const refused = await changeStock(variant.id, { change: 1, reason: "restock" }, suspended.token);
+  assert.equal(refused.status, 403);
+  assert.equal(refused.body.code, "PROFILE_SUSPENDED");
+  assert.equal((await history(variant.id, "", suspended.token)).status, 200);
+});
+
+test("low stock is flagged using the variant's threshold", async () => {
+  const product = await makeProduct();
+  const variant = await makeVariant(product.id, { lowStockThreshold: 3 });
+  assert.equal(variant.isLowStock, true);
+  assert.equal((await changeStock(variant.id, { change: 4, reason: "initial" })).body.variant.isLowStock, false);
+  assert.equal((await changeStock(variant.id, { change: -1, reason: "correction" })).body.variant.isLowStock, true);
+});
+
 test("unexpected rule breaks from the database give a 400 with no internal details", async () => {
   const handler = require("../src/middlewares/errorHandler");
   const res = {

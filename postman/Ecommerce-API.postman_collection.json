@@ -1230,6 +1230,72 @@
           "response": []
         },
         {
+          "name": "Change Stock",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/seller/variants/{{variantId}}/stock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seller",
+                "variants",
+                "{{variantId}}",
+                "stock"
+              ]
+            },
+            "description": "`change` is positive to add and negative to remove. `reason` is `initial` (only while a variant has no history), `restock` (adding) or `correction` (either way). 409 `INSUFFICIENT_STOCK` if it would go below 0. Sending the same request twice counts twice.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"change\": 50,\n  \"reason\": \"restock\",\n  \"note\": \"New delivery\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Stock History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/seller/variants/{{variantId}}/stock-movements?page=1&limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seller",
+                "variants",
+                "{{variantId}}",
+                "stock-movements"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Every stock change for this variant, newest first."
+          },
+          "response": []
+        },
+        {
           "name": "Delete Variant",
           "request": {
             "method": "DELETE",

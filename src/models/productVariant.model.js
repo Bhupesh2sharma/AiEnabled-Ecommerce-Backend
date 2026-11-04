@@ -1,4 +1,4 @@
-// SQL for product variants. Stock isn't changed here: it has its own function with a history (step 5).
+// SQL for product variants. Stock isn't changed here: see stock.model.js, which keeps a history.
 
 const db = require("../config/db");
 const buildAssignments = require("../utils/sqlUpdate");
@@ -37,6 +37,7 @@ function toSellerVariant(variant) {
     heightMm: variant.height_mm,
     stockQuantity: variant.stock_quantity,
     lowStockThreshold: variant.low_stock_threshold,
+    isLowStock: variant.stock_quantity <= variant.low_stock_threshold,
     barcode: variant.barcode,
     isActive: variant.is_active,
     createdAt: variant.created_at,

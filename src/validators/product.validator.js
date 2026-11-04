@@ -83,6 +83,23 @@ const updateVariant = z
   })
   .refine(atLeastOneField, NOTHING_TO_UPDATE);
 
+// Orders and returns add their own reasons later, and sellers won't be able to send those.
+const changeStock = z
+  .strictObject({
+    change: z.number().int().min(-10000000).max(10000000).refine((value) => value !== 0, "Change can't be 0"),
+    reason: z.enum(["initial", "restock", "correction"]),
+    note: text(255).optional(),
+  })
+  .refine((body) => body.reason === "correction" || body.change > 0, {
+    path: ["change"],
+    message: "Only a correction can remove stock",
+  });
+
+const paging = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+
 const idParam = z.object({ id: uuid });
 const listProducts = z.object({
   status: z.enum(["draft", "active", "paused"]).optional(),
@@ -90,4 +107,4 @@ const listProducts = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
-module.exports = { createProduct, updateProduct, createVariant, updateVariant, idParam, listProducts };
+module.exports = { createProduct, updateProduct, createVariant, updateVariant, changeStock, paging, idParam, listProducts };
