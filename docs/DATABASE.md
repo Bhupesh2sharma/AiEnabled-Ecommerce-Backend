@@ -15,6 +15,7 @@ what each table is for, how tables are grouped, and how they relate.
 | Identity & Access | `users`, `auth_providers`, `otp_codes`, `refresh_tokens` | Accounts for every role (customer, seller, admin), login and consent, linked external identities, one-time codes and sessions |
 | Customer | `addresses` | Saved shipping/billing addresses (also used for seller pickup) |
 | Seller | `seller_profiles` | Storefront, business/KYC, payout and approval details for sellers |
+| Catalog | `categories`, `brands`, `variant_options`, `variant_option_values`, `category_variant_options` | What can be sold: the category tree, brands and the variant choices each category offers. All admin-managed |
 | System | `schema_migrations` | Tracks which migration files have been applied (managed by `scripts/migrate.js`) |
 
 ## Relationships
@@ -27,6 +28,10 @@ erDiagram
     users ||--o| seller_profiles : "has (role = seller)"
     users ||--o{ seller_profiles : "verifies (admin, verified_by)"
     addresses ||--o{ seller_profiles : "pickup address"
+    categories ||--o{ categories : "parent of"
+    categories ||--o{ category_variant_options : "uses"
+    variant_options ||--o{ category_variant_options : "used by"
+    variant_options ||--o{ variant_option_values : "has"
 ```
 
 | From | To | Type | FK column | On delete |
@@ -37,6 +42,10 @@ erDiagram
 | `seller_profiles` | `users` | one-to-one | `seller_profiles.user_id` (UNIQUE) | CASCADE |
 | `seller_profiles` | `users` (admin) | many-to-one | `seller_profiles.verified_by` | SET NULL |
 | `seller_profiles` | `addresses` | many-to-one | `seller_profiles.pickup_address_id` | SET NULL |
+| `categories` | `categories` (parent) | many-to-one | `categories.parent_id` | RESTRICT |
+| `variant_option_values` | `variant_options` | many-to-one | `variant_option_values.option_id` | CASCADE |
+| `category_variant_options` | `categories` | many-to-one | `category_variant_options.category_id` | CASCADE |
+| `category_variant_options` | `variant_options` | many-to-one | `category_variant_options.option_id` | RESTRICT |
 
 ## Conventions (apply to every table)
 
@@ -209,6 +218,104 @@ One profile per seller account (`users.role = 'seller'`).
   `rejection_reason`, `verified_at` and `verified_by`. `suspended` profiles can't be edited.
 - Admins review `pending` or `rejected` profiles. An `approved` profile can't be rejected
   (`suspended` is for removing an approval, and has no endpoint yet).
+
+---
+
+## Catalog
+
+Categories and variant options are data, not code: admins create them, so a new category or option needs no code change.
+
+### `categories`
+Migration: `20261104135523_create_categories.sql`
+
+Admin-managed tree, for example Electronics → Mobiles → Smartphones.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID | PK |
+| `parent_id` | UUID | FK → `categories.id`, RESTRICT. NULL = top level. Can't be its own id |
+| `name` | VARCHAR(100) | required, unique case-insensitive under the same parent among non-deleted |
+| `slug` | VARCHAR(120) | lowercase-hyphenated, unique among non-deleted; used in URLs |
+| `description`, `image_url` | TEXT | |
+| `default_hsn_code` | VARCHAR(8) | 4, 6 or 8 digits; a suggestion for sellers only |
+| `sort_order` | INTEGER | default 0 |
+| `is_active` | BOOLEAN | default true |
+| `created_at` / `updated_at` / `deleted_at` | TIMESTAMPTZ | standard |
+
+**Rules (enforced in application code, not the DB)**
+- At most 3 levels, and moving a category must not create a loop.
+- Products attach only to a category with no children.
+- A category with live products or children can't be deleted.
+- Don't create food, medicine or similar categories until licence and expiry columns exist.
+
+**Referenced by:** `categories.parent_id`, `category_variant_options.category_id`.
+
+### `brands`
+Migration: `20261104135523_create_brands.sql`
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID | PK |
+| `name` | VARCHAR(100) | required, unique case-insensitive among non-deleted |
+| `slug` | VARCHAR(120) | lowercase-hyphenated, unique among non-deleted |
+| `logo_url` | TEXT | |
+| `is_active` | BOOLEAN | default true |
+| `created_at` / `updated_at` / `deleted_at` | TIMESTAMPTZ | standard |
+
+**Rules (enforced in application code, not the DB)**
+- When a seller types a brand name, reuse an existing match, otherwise create it.
+
+### `variant_options`
+Migration: `20261104135523_create_variant_options.sql`
+
+The kinds of choice a variant can have, such as Size, Colour or RAM.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID | PK |
+| `name` | VARCHAR(50) | shown to customers; can be renamed |
+| `code` | VARCHAR(50) | e.g. `size`, unique among non-deleted |
+| `allow_custom_values` | BOOLEAN | default false; true lets sellers type their own value, e.g. a colour |
+| `created_at` / `updated_at` / `deleted_at` | TIMESTAMPTZ | standard |
+
+**Rules (enforced in application code, not the DB)**
+- `code` can't change after creation, because variants will store it.
+
+**Referenced by:** `variant_option_values.option_id`, `category_variant_options.option_id`.
+
+### `variant_option_values`
+Migration: `20261104135523_create_variant_options.sql`
+
+The allowed values of an option, such as S, M, L.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID | PK |
+| `option_id` | UUID | FK → `variant_options.id`, CASCADE |
+| `label` | VARCHAR(50) | shown to customers; can be renamed |
+| `code` | VARCHAR(50) | e.g. `m`, unique per option among non-deleted |
+| `color_hex` | CHAR(7) | optional colour swatch, e.g. `#FF0000` |
+| `sort_order` | INTEGER | default 0, so sizes show S, M, L rather than alphabetically |
+| `created_at` / `updated_at` / `deleted_at` | TIMESTAMPTZ | standard |
+
+**Rules (enforced in application code, not the DB)**
+- `code` can't change after creation, because variants will store it.
+
+### `category_variant_options`
+Migration: `20261104135523_create_variant_options.sql`
+
+Which options each category uses.
+
+| Column | Type | Notes |
+|---|---|---|
+| `category_id` | UUID | PK with `option_id`; FK → `categories.id`, CASCADE |
+| `option_id` | UUID | FK → `variant_options.id`, RESTRICT |
+| `is_required` | BOOLEAN | default true; every variant must choose a value |
+| `sort_order` | INTEGER | default 0 |
+| `created_at` | TIMESTAMPTZ | no `updated_at` or soft delete; rows are removed when an admin changes the list |
+
+**Rules (enforced in application code, not the DB)**
+- A category uses its own options plus those of its parents.
 
 ---
 
