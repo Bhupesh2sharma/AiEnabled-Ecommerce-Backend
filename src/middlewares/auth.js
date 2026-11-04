@@ -1,3 +1,5 @@
+// Protects routes: authenticate checks who the user is, authorize checks their role.
+
 const UserModel = require("../models/user.model");
 const ApiError = require("../utils/ApiError");
 const { verifyAccessToken } = require("../utils/token");

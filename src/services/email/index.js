@@ -1,3 +1,6 @@
+// Picks the email driver from EMAIL_DRIVER. Add a provider by adding a file with a send() function
+// and listing it in config/env.js.
+
 const env = require("../../config/env");
 
 const driver = require(`./${env.EMAIL_DRIVER}`);

@@ -1,9 +1,13 @@
+// SQL for otp_codes. Rules such as limits and expiry times are in services/otp.service.js.
+
 const db = require("../config/db");
 
+// Holds a lock on this email or phone until the transaction ends.
 async function lockTarget(target, client) {
   await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [target]);
 }
 
+// How long ago the last code was sent, and how many were sent in the past hour.
 async function getSendStats({ channel, target, purpose }, client = db) {
   const { rows } = await client.query(
     `SELECT EXTRACT(EPOCH FROM NOW() - MAX(created_at))::float AS seconds_since_last,
@@ -15,6 +19,7 @@ async function getSendStats({ channel, target, purpose }, client = db) {
   return rows[0];
 }
 
+// Deletes codes older than a day, so the table doesn't grow forever.
 async function purgeOld({ channel, target, purpose }, client = db) {
   await client.query(
     `DELETE FROM otp_codes
@@ -23,6 +28,7 @@ async function purgeOld({ channel, target, purpose }, client = db) {
   );
 }
 
+// Cancels earlier codes, so only the newest one works.
 async function consumeActive({ channel, target, purpose }, client = db) {
   await client.query(
     `UPDATE otp_codes SET consumed_at = NOW()
@@ -31,6 +37,7 @@ async function consumeActive({ channel, target, purpose }, client = db) {
   );
 }
 
+// Stores the hash of a new code.
 async function create({ channel, target, purpose, codeHash, expiresMinutes }, client = db) {
   const { rows } = await client.query(
     `INSERT INTO otp_codes (channel, target, purpose, code_hash, expires_at)
@@ -41,10 +48,12 @@ async function create({ channel, target, purpose, codeHash, expiresMinutes }, cl
   return rows[0];
 }
 
+// Deletes a code that could not be delivered.
 async function remove(id) {
   await db.query("DELETE FROM otp_codes WHERE id = $1", [id]);
 }
 
+// Finds the newest unused, unexpired code.
 async function findActive({ channel, target, purpose }) {
   const { rows } = await db.query(
     `SELECT * FROM otp_codes

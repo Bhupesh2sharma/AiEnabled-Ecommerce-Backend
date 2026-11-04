@@ -1,3 +1,6 @@
+// The rules for one-time codes: creating, limiting, delivering and checking them.
+// Used by the signup and OTP controllers.
+
 const db = require("../config/db");
 const OtpModel = require("../models/otp.model");
 const ApiError = require("../utils/ApiError");
@@ -13,6 +16,7 @@ const MAX_SENDS_PER_HOUR = 5;
 const invalidCode = () =>
   new ApiError(400, "Invalid or expired code", { code: "INVALID_OTP" });
 
+// Sends the code through the email or SMS driver chosen in .env.
 function deliver({ channel, target, purpose }, code) {
   return channel === "email" ? sendOtpEmail(target, code, purpose) : sendOtpSms(target, code);
 }

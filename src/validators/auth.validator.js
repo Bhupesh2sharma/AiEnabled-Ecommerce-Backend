@@ -1,3 +1,5 @@
+// Request body rules for the auth and admin-creation endpoints. Emails are trimmed and lowercased here.
+
 const { z } = require("zod");
 
 const email = z.string().trim().toLowerCase().max(255).pipe(z.email("Enter a valid email address"));

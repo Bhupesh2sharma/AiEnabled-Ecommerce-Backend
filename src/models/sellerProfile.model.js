@@ -1,5 +1,8 @@
+// SQL for seller_profiles.
+
 const db = require("../config/db");
 
+// The fields a seller may see. Converts database names to the API's camelCase.
 function toPublicProfile(profile) {
   return {
     id: profile.id,
@@ -21,6 +24,7 @@ function toPublicProfile(profile) {
   };
 }
 
+// The seller's view plus the fields that only admins need.
 function toAdminProfile(profile) {
   return {
     ...toPublicProfile(profile),
@@ -30,6 +34,7 @@ function toAdminProfile(profile) {
   };
 }
 
+// verification_status isn't set here, so the database default of `pending` applies.
 async function create(userId, fields) {
   const { rows } = await db.query(
     `INSERT INTO seller_profiles (
@@ -56,6 +61,7 @@ async function create(userId, fields) {
   return rows[0];
 }
 
+// A pickup address must belong to the seller creating the profile.
 async function userOwnsAddress(userId, addressId) {
   const { rowCount } = await db.query(
     "SELECT 1 FROM addresses WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL",
@@ -64,6 +70,7 @@ async function userOwnsAddress(userId, addressId) {
   return rowCount === 1;
 }
 
+// Finds a live profile by id.
 async function findById(id) {
   const { rows } = await db.query("SELECT * FROM seller_profiles WHERE id = $1 AND deleted_at IS NULL", [id]);
   return rows[0] ?? null;

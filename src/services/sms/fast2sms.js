@@ -1,3 +1,5 @@
+// Production SMS driver. Needs FAST2SMS_API_KEY.
+
 const env = require("../../config/env");
 
 // Uses the OTP route and its pre-approved template "Your OTP: {#var#}". Indian numbers only.

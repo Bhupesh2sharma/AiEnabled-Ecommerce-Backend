@@ -1,3 +1,5 @@
+// URLs under /api/seller. Every route here requires a seller login.
+
 const { Router } = require("express");
 const seller = require("../controllers/seller.controller");
 const { authenticate, authorize } = require("../middlewares/auth");

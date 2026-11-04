@@ -1,3 +1,5 @@
+// Request body rules for seller endpoints.
+
 const { z } = require("zod");
 
 const optionalUrl = z.url("Enter a valid URL").optional();

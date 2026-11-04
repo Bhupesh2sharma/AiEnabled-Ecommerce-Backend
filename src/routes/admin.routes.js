@@ -1,3 +1,5 @@
+// URLs under /api/admin. Every route here requires an admin login.
+
 const { Router } = require("express");
 const admin = require("../controllers/admin.controller");
 const { authenticate, authorize } = require("../middlewares/auth");

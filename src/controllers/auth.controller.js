@@ -1,3 +1,5 @@
+// Email + password signup and login, plus session endpoints (refresh, logout, me).
+
 const db = require("../config/db");
 const RefreshTokenModel = require("../models/refreshToken.model");
 const UserModel = require("../models/user.model");
@@ -14,6 +16,7 @@ const {
 } = require("../utils/session");
 const { signAccessToken, hashRefreshToken } = require("../utils/token");
 
+// POST /api/auth/signup: creates a customer or seller, emails a verification code and logs them in.
 async function signup(req, res) {
   const { name, email, password, role, marketingOptIn } = req.body;
 
@@ -34,6 +37,8 @@ async function signup(req, res) {
   res.status(201).json(await startSession(req, res, user));
 }
 
+// POST /api/auth/login: checks the lock, then the password. Wrong password and unknown email
+// return the same error, so this can't be used to find out which emails are registered.
 async function login(req, res) {
   const { email, password } = req.body;
   const user = await UserModel.findByEmail(email);
@@ -74,6 +79,7 @@ async function refresh(req, res) {
   res.json({ user: UserModel.toPublicUser(user), accessToken: signAccessToken(user) });
 }
 
+// POST /api/auth/logout: ends this device's session. Succeeds even if there is no valid cookie.
 async function logout(req, res) {
   const token = req.cookies[REFRESH_COOKIE];
   if (token) await RefreshTokenModel.revokeIfActive(hashRefreshToken(token));
@@ -81,12 +87,14 @@ async function logout(req, res) {
   res.status(204).end();
 }
 
+// POST /api/auth/logout-all: ends the sessions on every device.
 async function logoutAll(req, res) {
   await RefreshTokenModel.revokeAllForUser(req.user.id);
   clearRefreshCookie(res);
   res.status(204).end();
 }
 
+// GET /api/auth/me: returns the user that the authenticate middleware loaded.
 function me(req, res) {
   res.json({ user: UserModel.toPublicUser(req.user) });
 }

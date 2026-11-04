@@ -1,3 +1,5 @@
+// Google sign-in. The frontend gets an ID token from Google and sends it here.
+
 const db = require("../config/db");
 const AuthProviderModel = require("../models/authProvider.model");
 const RefreshTokenModel = require("../models/refreshToken.model");
@@ -8,6 +10,7 @@ const { assertActive, startSession } = require("../utils/session");
 
 const PROVIDER = "google";
 
+// Admins can't use Google, and suspended or inactive accounts can't log in.
 function assertGoogleAllowed(user) {
   if (user.role === "admin") {
     throw new ApiError(403, "Admins cannot log in with Google", { code: "METHOD_NOT_ALLOWED" });
@@ -15,6 +18,10 @@ function assertGoogleAllowed(user) {
   assertActive(user);
 }
 
+// POST /api/auth/google: finds the user in this order, inside one transaction:
+//   1. Already linked to this Google account: log in.
+//   2. Same email as an existing account: link Google to it and log in.
+//   3. Neither: create a new account, which requires termsAccepted.
 async function login(req, res) {
   const { idToken, role, termsAccepted, marketingOptIn } = req.body;
   const identity = await google.verifyIdToken(idToken);

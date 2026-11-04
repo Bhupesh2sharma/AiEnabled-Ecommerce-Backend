@@ -1,3 +1,5 @@
+// Rejects bad input before it reaches a controller, with a 400 listing each invalid field.
+
 const ApiError = require("../utils/ApiError");
 
 // Validates req.body, req.params or req.query against a zod schema and replaces it with the

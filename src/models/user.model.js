@@ -1,3 +1,5 @@
+// SQL for the users table. Soft-deleted users are never returned by the find functions.
+
 const db = require("../config/db");
 const env = require("../config/env");
 
@@ -21,6 +23,7 @@ function toPublicUser(user) {
   };
 }
 
+// The find and create functions take an optional client so they can run inside a transaction.
 async function findById(id, client = db) {
   const { rows } = await client.query("SELECT * FROM users WHERE id = $1 AND deleted_at IS NULL", [id]);
   return rows[0] ?? null;
@@ -39,6 +42,8 @@ async function findByPhone(phone, client = db) {
   return rows[0] ?? null;
 }
 
+// Creates a user of any role. Terms are recorded as accepted now, with the current terms version,
+// so callers must check termsAccepted before calling this.
 async function create(
   {
     name,
@@ -70,6 +75,7 @@ async function create(
   return rows[0];
 }
 
+// Counts a failed password. The fifth failure locks the account and restarts the count.
 async function recordFailedLogin(id) {
   await db.query(
     `UPDATE users
@@ -81,6 +87,7 @@ async function recordFailedLogin(id) {
   );
 }
 
+// Called on every successful login: saves the time and clears any failed attempts and lock.
 async function recordLogin(id, client = db) {
   await client.query(
     "UPDATE users SET last_login_at = NOW(), failed_login_count = 0, locked_until = NULL WHERE id = $1",
@@ -88,6 +95,7 @@ async function recordLogin(id, client = db) {
   );
 }
 
+// COALESCE keeps the original verification time if the email was already verified.
 async function markEmailVerified(id, client = db) {
   const { rows } = await client.query(
     "UPDATE users SET email_verified_at = COALESCE(email_verified_at, NOW()) WHERE id = $1 RETURNING *",
@@ -117,6 +125,7 @@ async function resetPassword(id, passwordHash, client = db) {
   );
 }
 
+// A phone is only saved after its OTP is checked, so a stored phone is always verified.
 async function setVerifiedPhone(id, phone) {
   const { rows } = await db.query(
     "UPDATE users SET phone = $2, phone_verified_at = NOW() WHERE id = $1 RETURNING *",
@@ -125,6 +134,7 @@ async function setVerifiedPhone(id, phone) {
   return rows[0];
 }
 
+// Used by logged-in accounts after their email OTP is checked.
 async function setVerifiedEmail(id, email) {
   const { rows } = await db.query(
     "UPDATE users SET email = $2, email_verified_at = NOW() WHERE id = $1 RETURNING *",
@@ -133,6 +143,7 @@ async function setVerifiedEmail(id, email) {
   return rows[0];
 }
 
+// Used by scripts/create-admin.js, which only creates the first admin.
 async function adminExists() {
   const { rows } = await db.query(
     "SELECT EXISTS (SELECT 1 FROM users WHERE role = 'admin' AND deleted_at IS NULL) AS exists"

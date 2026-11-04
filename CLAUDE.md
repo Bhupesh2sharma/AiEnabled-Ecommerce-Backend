@@ -38,6 +38,7 @@ scripts/create-admin.js  creates the first admin
 tests/             API tests (node:test)
 postman/          Postman collection (keep in sync with the API)
 docs/DATABASE.md   database schema documentation
+docs/AUTH.md       how authentication works
 plans/             feature plans (e.g. authentication-plan.md)
 ```
 
@@ -62,6 +63,11 @@ The DB password contains `#`, which must be URL-encoded as `%23` in `DATABASE_UR
 - Never edit a migration that has already been applied. Write a new migration instead.
 - Each file runs in a transaction; keep one logical change per file.
 - Create referenced tables before the tables that point to them.
+
+## Auth: read and maintain `docs/AUTH.md`
+
+`docs/AUTH.md` describes how auth works. Any change to auth behaviour, endpoints, limits, error codes or settings
+must update it in the same change.
 
 ## Postman collection
 

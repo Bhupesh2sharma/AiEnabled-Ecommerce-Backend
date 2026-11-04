@@ -1,3 +1,5 @@
+// Password hashing with bcrypt.
+
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const env = require("../config/env");

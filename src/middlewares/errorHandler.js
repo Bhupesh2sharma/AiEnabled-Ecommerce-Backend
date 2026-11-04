@@ -1,7 +1,10 @@
+// Turns every error into the API's JSON error format: { message, code?, details? }.
+
 const env = require("../config/env");
 
 const PG_UNIQUE_VIOLATION = "23505";
 
+// Friendly messages for duplicates caught by the database, keyed by constraint name.
 const UNIQUE_MESSAGES = {
   users_email_unique: "An account with this email already exists",
   users_phone_unique: "An account with this phone number already exists",
@@ -10,6 +13,7 @@ const UNIQUE_MESSAGES = {
   seller_profiles_user_id_key: "A seller profile already exists for this account",
 };
 
+// Express treats a middleware with four parameters as the error handler.
 // eslint-disable-next-line no-unused-vars
 function errorHandler(err, req, res, next) {
   if (err.code === PG_UNIQUE_VIOLATION) {

@@ -1,3 +1,5 @@
+// Production email driver, using Resend's REST API. Needs RESEND_API_KEY and EMAIL_FROM.
+
 const env = require("../../config/env");
 
 async function send({ to, subject, text }) {

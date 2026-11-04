@@ -1,3 +1,5 @@
+// Admin-only actions. admin.routes.js requires an admin login for everything here.
+
 const SellerProfileModel = require("../models/sellerProfile.model");
 const UserModel = require("../models/user.model");
 const ApiError = require("../utils/ApiError");
@@ -16,11 +18,13 @@ async function createAdmin(req, res) {
   res.status(201).json({ user: UserModel.toPublicUser(user) });
 }
 
+// GET /api/admin/sellers: lists seller profiles by status.
 async function listSellers(req, res) {
   const profiles = await SellerProfileModel.listByStatus(req.query.status);
   res.json({ profiles: profiles.map(SellerProfileModel.toAdminProfile) });
 }
 
+// PATCH /api/admin/sellers/:id/verification: approves or rejects a seller profile.
 async function decideSeller(req, res) {
   const { id } = req.params;
   const { status, reason } = req.body;

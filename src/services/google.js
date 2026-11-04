@@ -1,3 +1,5 @@
+// Talks to Google's library to verify ID tokens.
+
 const { OAuth2Client } = require("google-auth-library");
 const env = require("../config/env");
 const ApiError = require("../utils/ApiError");

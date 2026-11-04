@@ -1,3 +1,6 @@
+// Everything that uses a one-time code: sending, email verification, OTP login,
+// password reset, and adding an email or phone to a logged-in account.
+
 const db = require("../config/db");
 const RefreshTokenModel = require("../models/refreshToken.model");
 const UserModel = require("../models/user.model");
@@ -41,6 +44,7 @@ async function send(req, res) {
   });
 }
 
+// POST /api/auth/otp/verify-email: verifies the email of an existing account. No login needed.
 async function verifyEmail(req, res) {
   const { email, code } = req.body;
   await verifyOtp({ channel: "email", target: email, purpose: "verify_email", code });
@@ -52,6 +56,7 @@ async function verifyEmail(req, res) {
   res.json({ user: UserModel.toPublicUser(updated) });
 }
 
+// Email OTP only logs in; it never creates an account.
 async function loginWithEmail(req, res, otp) {
   const user = await UserModel.findByEmail(req.body.target);
   if (!user) throw invalidCode();
@@ -67,6 +72,7 @@ async function loginWithEmail(req, res, otp) {
   res.json(await startSession(req, res, claimed));
 }
 
+// Phone OTP logs in, or signs up if the number is new. Admins can't use it.
 async function loginWithPhone(req, res, otp) {
   const { target: phone, name, role, termsAccepted, marketingOptIn } = req.body;
   const user = await UserModel.findByPhone(phone);
@@ -90,12 +96,14 @@ async function loginWithPhone(req, res, otp) {
   res.status(201).json(await startSession(req, res, created));
 }
 
+// POST /api/auth/otp/login: checks the code, then continues by channel.
 async function login(req, res) {
   const { channel, target, code } = req.body;
   const otp = await checkOtp({ channel, target, purpose: "login", code });
   return channel === "email" ? loginWithEmail(req, res, otp) : loginWithPhone(req, res, otp);
 }
 
+// POST /api/auth/password/reset: sets a new password and ends every session.
 async function resetPassword(req, res) {
   const { email, code, newPassword } = req.body;
   await verifyOtp({ channel: "email", target: email, purpose: "reset_password", code });
@@ -138,6 +146,7 @@ async function sendEmailVerification(req, res) {
   res.json({ message: "Code sent", resendAfterSeconds: RESEND_COOLDOWN_SECONDS });
 }
 
+// POST /api/auth/email/verify: saves the email on the logged-in account as verified.
 async function verifyAccountEmail(req, res) {
   const { email, code } = req.body;
   assertCanUseEmail(req.user, email);
@@ -157,6 +166,7 @@ async function sendPhoneVerification(req, res) {
   res.json({ message: "Code sent", resendAfterSeconds: RESEND_COOLDOWN_SECONDS });
 }
 
+// POST /api/auth/phone/verify: saves the phone on the logged-in account as verified.
 async function verifyPhone(req, res) {
   const { phone, code } = req.body;
   await verifyOtp({ channel: "phone", target: phone, purpose: "verify_phone", code });

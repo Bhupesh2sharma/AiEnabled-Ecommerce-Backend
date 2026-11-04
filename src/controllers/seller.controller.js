@@ -1,3 +1,5 @@
+// Seller onboarding. Admin review of the profile is in admin.controller.js.
+
 const SellerProfileModel = require("../models/sellerProfile.model");
 const ApiError = require("../utils/ApiError");
 
@@ -15,6 +17,7 @@ function assertContactsVerified(user) {
   }
 }
 
+// POST /api/seller/profile: creates the store profile, which starts as `pending`.
 async function createProfile(req, res) {
   assertContactsVerified(req.user);
 

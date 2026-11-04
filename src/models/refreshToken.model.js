@@ -1,6 +1,9 @@
+// SQL for refresh_tokens: one row per logged-in session. Only the token's hash is stored.
+
 const db = require("../config/db");
 const env = require("../config/env");
 
+// Stores a new session, which expires after REFRESH_TOKEN_EXPIRES_DAYS.
 async function create({ userId, tokenHash, userAgent }, client = db) {
   await client.query(
     `INSERT INTO refresh_tokens (user_id, token_hash, user_agent, expires_at)
@@ -20,6 +23,7 @@ async function revokeIfActive(tokenHash, client = db) {
   return rows[0] ?? null;
 }
 
+// Ends every session of a user, for logout-all, password reset and email takeover.
 async function revokeAllForUser(userId, client = db) {
   await client.query(
     "UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL",
@@ -27,6 +31,7 @@ async function revokeAllForUser(userId, client = db) {
   );
 }
 
+// Deletes expired sessions. Runs on each login so the table doesn't grow forever.
 async function purgeExpiredForUser(userId, client = db) {
   await client.query("DELETE FROM refresh_tokens WHERE user_id = $1 AND expires_at < NOW()", [userId]);
 }

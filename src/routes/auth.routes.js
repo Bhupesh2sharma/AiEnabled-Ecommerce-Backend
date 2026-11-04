@@ -1,3 +1,5 @@
+// URLs under /api/auth. Each route runs left to right: limits, login check, validation, controller.
+
 const { Router } = require("express");
 const auth = require("../controllers/auth.controller");
 const google = require("../controllers/google.controller");

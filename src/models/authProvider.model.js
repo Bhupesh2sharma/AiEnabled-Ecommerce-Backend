@@ -1,3 +1,5 @@
+// SQL for auth_providers: links a user to an external login such as Google.
+
 const db = require("../config/db");
 
 // Returns the live user linked to this identity, if any.
