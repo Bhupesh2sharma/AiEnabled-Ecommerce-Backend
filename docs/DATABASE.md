@@ -15,7 +15,8 @@ what each table is for, how tables are grouped, and how they relate.
 | Identity & Access | `users`, `auth_providers`, `otp_codes`, `refresh_tokens` | Accounts for every role (customer, seller, admin), login and consent, linked external identities, one-time codes and sessions |
 | Customer | `addresses` | Saved shipping/billing addresses (also used for seller pickup) |
 | Seller | `seller_profiles` | Storefront, business/KYC, payout and approval details for sellers |
-| Catalog | `categories`, `brands`, `variant_options`, `variant_option_values`, `category_variant_options` | What can be sold: the category tree, brands and the variant choices each category offers. All admin-managed |
+| Catalog | `categories`, `brands`, `variant_options`, `variant_option_values`, `category_variant_options` | What can be sold: the category tree, brands and the variant choices each category offers. Admin-managed |
+| Products | `products`, `product_variants`, `product_images`, `stock_movements` | Sellers' listings, what's actually bought, photos and stock history |
 | System | `schema_migrations` | Tracks which migration files have been applied (managed by `scripts/migrate.js`) |
 
 ## Relationships
@@ -32,6 +33,15 @@ erDiagram
     categories ||--o{ category_variant_options : "uses"
     variant_options ||--o{ category_variant_options : "used by"
     variant_options ||--o{ variant_option_values : "has"
+    seller_profiles ||--o{ products : "sells"
+    categories ||--o{ products : "contains"
+    brands ||--o{ products : "makes"
+    users ||--o{ products : "blocks (admin)"
+    products ||--|{ product_variants : "has"
+    products ||--o{ product_images : "shows"
+    product_variants ||--o{ product_images : "may show"
+    product_variants ||--o{ stock_movements : "logs"
+    users ||--o{ stock_movements : "made by"
 ```
 
 | From | To | Type | FK column | On delete |
@@ -46,6 +56,15 @@ erDiagram
 | `variant_option_values` | `variant_options` | many-to-one | `variant_option_values.option_id` | CASCADE |
 | `category_variant_options` | `categories` | many-to-one | `category_variant_options.category_id` | CASCADE |
 | `category_variant_options` | `variant_options` | many-to-one | `category_variant_options.option_id` | RESTRICT |
+| `products` | `seller_profiles` | many-to-one | `products.seller_id` | RESTRICT |
+| `products` | `categories` | many-to-one | `products.category_id` | RESTRICT |
+| `products` | `brands` | many-to-one | `products.brand_id` | RESTRICT |
+| `products` | `users` (admin) | many-to-one | `products.blocked_by` | SET NULL |
+| `product_variants` | `products` | many-to-one | `product_variants (product_id, seller_id)` | CASCADE |
+| `product_images` | `products` | many-to-one | `product_images.product_id` | CASCADE |
+| `product_images` | `product_variants` | many-to-one | `product_images (variant_id, product_id)` | SET NULL on `variant_id` |
+| `stock_movements` | `product_variants` | many-to-one | `stock_movements.variant_id` | CASCADE |
+| `stock_movements` | `users` | many-to-one | `stock_movements.created_by` | SET NULL |
 
 ## Conventions (apply to every table)
 
@@ -99,7 +118,7 @@ separate tables (e.g. `seller_profiles`).
 - Taking over an unverified email (Google link or email OTP login) clears `password_hash` and revokes
   all sessions, so whoever registered that email without proving it loses access.
 
-**Referenced by:** `auth_providers.user_id`, `refresh_tokens.user_id`, `addresses.user_id`, `seller_profiles.user_id`, `seller_profiles.verified_by`.
+**Referenced by:** `auth_providers.user_id`, `refresh_tokens.user_id`, `addresses.user_id`, `seller_profiles.user_id`, `seller_profiles.verified_by`, `products.blocked_by`, `stock_movements.created_by`.
 
 ### `auth_providers`
 Migration: `20261104120742_auth_schema.sql`
@@ -219,6 +238,8 @@ One profile per seller account (`users.role = 'seller'`).
 - Admins review `pending` or `rejected` profiles. An `approved` profile can't be rejected
   (`suspended` is for removing an approval, and has no endpoint yet).
 
+**Referenced by:** `products.seller_id`.
+
 ---
 
 ## Catalog
@@ -248,7 +269,7 @@ Admin-managed tree, for example Electronics → Mobiles → Smartphones.
 - A category with live products or children can't be deleted.
 - Don't create food, medicine or similar categories until licence and expiry columns exist.
 
-**Referenced by:** `categories.parent_id`, `category_variant_options.category_id`.
+**Referenced by:** `categories.parent_id`, `category_variant_options.category_id`, `products.category_id`.
 
 ### `brands`
 Migration: `20261104135523_create_brands.sql`
@@ -264,6 +285,8 @@ Migration: `20261104135523_create_brands.sql`
 
 **Rules (enforced in application code, not the DB)**
 - When a seller types a brand name, reuse an existing match, otherwise create it.
+
+**Referenced by:** `products.brand_id`.
 
 ### `variant_options`
 Migration: `20261104135523_create_variant_options.sql`
@@ -316,6 +339,124 @@ Which options each category uses.
 
 **Rules (enforced in application code, not the DB)**
 - A category uses its own options plus those of its parents.
+
+---
+
+## Products
+
+Prices are rupees and include GST. There is no currency column, because the shop is India-only.
+
+### `products`
+Migration: `20261104141114_create_products.sql`
+
+The listing customers see. Enables the `pg_trgm` extension for typo-tolerant search.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID | PK. Also unique with `seller_id`, for the variant FK |
+| `seller_id` | UUID | FK → `seller_profiles.id`, RESTRICT |
+| `category_id` | UUID | FK → `categories.id`, RESTRICT |
+| `brand_id` | UUID | FK → `brands.id`, RESTRICT. NULL = unbranded |
+| `title` | VARCHAR(200) | required |
+| `slug` | VARCHAR(220) | lowercase-hyphenated, unique among non-deleted |
+| `description` | TEXT | |
+| `highlights` | TEXT[] | default empty; short bullet points |
+| `specifications` | JSONB | default `{}`, must be an object; display only |
+| `hsn_code` | VARCHAR(8) | 4, 6 or 8 digits |
+| `generic_name` | VARCHAR(150) | e.g. "Men's T-Shirt" |
+| `country_of_origin` | CHAR(2) | ISO code, uppercase, e.g. `IN` |
+| `manufacturer_name` | VARCHAR(200) | |
+| `manufacturer_address` | TEXT | |
+| `packer_details`, `importer_details` | TEXT | optional |
+| `is_returnable` | BOOLEAN | default true |
+| `return_window_days` | SMALLINT | default 7; above 0 when returnable |
+| `warranty_summary` | VARCHAR(255) | optional |
+| `status` | `product_status` | `draft` (default), `active`, `paused` |
+| `min_price` | NUMERIC(12,2) | lowest live variant price, for sorting and filtering |
+| `search_vector` | TSVECTOR | generated from `title` and `generic_name` |
+| `blocked_at`, `blocked_by`, `blocked_reason` | | admin moderation; `blocked_by` FK → `users.id`, SET NULL; a reason is required when blocked |
+| `created_at` / `updated_at` / `deleted_at` | TIMESTAMPTZ | standard |
+
+A non-draft product must have `generic_name`, `country_of_origin`, `manufacturer_name` and `manufacturer_address` (CHECK).
+
+**Rules (enforced in application code, not the DB)**
+- A product appears to customers only when: `status = 'active'`, not blocked or deleted; the seller is `approved` and their account active; the category is active; and it has a live variant and an image.
+- Only `approved` sellers can publish, and sellers can only touch their own products. Sellers can't unblock a product.
+- `hsn_code` is required to publish if the seller has a GSTIN.
+- Products attach only to a category with no children.
+- Whenever a variant's price or status changes, recalculate `min_price` in the same transaction.
+- Orders must **copy** title, price, GST rate and HSN code when placed, so later edits never change past orders.
+
+**Referenced by:** `product_variants (product_id, seller_id)`, `product_images.product_id`.
+
+### `product_variants`
+Migration: `20261104141116_create_product_variants.sql`
+
+What's actually bought. Every product has at least one; a product with no options has one with empty `options`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID | PK. Also unique with `product_id`, for the image FK |
+| `product_id`, `seller_id` | UUID | composite FK → `products (id, seller_id)`, CASCADE, so a variant can't be under another seller's product |
+| `sku` | VARCHAR(64) | seller's code, unique per seller, case-insensitive, among non-deleted |
+| `options` | JSONB | default `{}`, option code → value code. Unique per product among non-deleted |
+| `option_labels` | JSONB | default `{}`, labels for custom values only |
+| `mrp` | NUMERIC(12,2) | above 0 |
+| `selling_price` | NUMERIC(12,2) | above 0 and at most `mrp`; includes GST |
+| `gst_rate` | NUMERIC(5,2) | default 0, 0–100 |
+| `net_quantity` | VARCHAR(50) | e.g. "500 g" |
+| `weight_grams` | INTEGER | above 0 |
+| `length_mm`, `width_mm`, `height_mm` | INTEGER | above 0 |
+| `stock_quantity` | INTEGER | default 0, can't be negative |
+| `low_stock_threshold` | INTEGER | default 5 |
+| `barcode` | VARCHAR(20) | optional GTIN/EAN, 8–14 digits |
+| `is_active` | BOOLEAN | default true |
+| `created_at` / `updated_at` / `deleted_at` | TIMESTAMPTZ | standard |
+
+**Rules (enforced in application code, not the DB)**
+- `net_quantity`, `weight_grams` and the dimensions are required to publish.
+- `options` must match the category's options and allowed values.
+- `gst_rate` must be a current GST rate, and 0 for a seller with no GSTIN.
+- Stock changes only through one function that updates the variant and adds a `stock_movements` row in one transaction.
+
+**Referenced by:** `product_images (variant_id, product_id)`, `stock_movements.variant_id`.
+
+### `product_images`
+Migration: `20261104141117_create_product_images.sql`
+
+The file is in R2 or S3; this row records where.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID | PK |
+| `product_id` | UUID | FK → `products.id`, CASCADE |
+| `variant_id` | UUID | composite FK with `product_id` → `product_variants (id, product_id)`, so it must be the same product. Deleting the variant clears this and keeps the image |
+| `storage_provider` | `storage_provider` | `r2`, `s3` |
+| `storage_key` | VARCHAR(255) | file path in the bucket, unique per provider |
+| `url` | TEXT | required |
+| `alt_text` | VARCHAR(200) | |
+| `sort_order` | INTEGER | default 0 |
+| `is_primary` | BOOLEAN | default false; at most one per product |
+| `created_at` / `updated_at` | TIMESTAMPTZ | hard deleted: no `deleted_at` |
+
+**Rules (enforced in application code, not the DB)**
+- At most 8 images per product.
+
+### `stock_movements`
+Migration: `20261104141118_create_stock_movements.sql`
+
+History of every stock change. Rows are only ever added.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID | PK |
+| `variant_id` | UUID | FK → `product_variants.id`, CASCADE |
+| `change` | INTEGER | positive or negative, not 0 |
+| `quantity_after` | INTEGER | stock after this change, 0 or more |
+| `reason` | `stock_movement_reason` | `initial`, `restock`, `correction` |
+| `note` | VARCHAR(255) | |
+| `created_by` | UUID | FK → `users.id`, SET NULL |
+| `created_at` | TIMESTAMPTZ | no `updated_at` or soft delete |
 
 ---
 
