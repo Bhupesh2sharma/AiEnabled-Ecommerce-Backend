@@ -26,6 +26,21 @@ router.post("/otp/login", limit.credentials, validate(schemas.otpLogin), asyncHa
 router.post("/password/reset", limit.credentials, validate(schemas.resetPassword), asyncHandler(otp.resetPassword));
 
 router.post(
+  "/email/send-verification",
+  limit.otpSend,
+  asyncHandler(authenticate),
+  validate(schemas.emailSendVerification),
+  asyncHandler(otp.sendEmailVerification)
+);
+router.post(
+  "/email/verify",
+  limit.credentials,
+  asyncHandler(authenticate),
+  validate(schemas.emailVerify),
+  asyncHandler(otp.verifyAccountEmail)
+);
+
+router.post(
   "/phone/send-verification",
   limit.otpSend,
   asyncHandler(authenticate),

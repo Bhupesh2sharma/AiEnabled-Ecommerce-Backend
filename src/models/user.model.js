@@ -125,6 +125,14 @@ async function setVerifiedPhone(id, phone) {
   return rows[0];
 }
 
+async function setVerifiedEmail(id, email) {
+  const { rows } = await db.query(
+    "UPDATE users SET email = $2, email_verified_at = NOW() WHERE id = $1 RETURNING *",
+    [id, email]
+  );
+  return rows[0];
+}
+
 async function adminExists() {
   const { rows } = await db.query(
     "SELECT EXISTS (SELECT 1 FROM users WHERE role = 'admin' AND deleted_at IS NULL) AS exists"
@@ -144,5 +152,6 @@ module.exports = {
   claimUnverifiedEmail,
   resetPassword,
   setVerifiedPhone,
+  setVerifiedEmail,
   adminExists,
 };

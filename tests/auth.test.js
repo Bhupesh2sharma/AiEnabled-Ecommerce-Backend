@@ -540,6 +540,13 @@ test("a Google identity from a soft-deleted account can sign up again", async ()
   assert.equal(res.status, 201);
 });
 
+let phoneCounter = 0;
+const markContactsVerified = (userId) =>
+  db.query("UPDATE users SET email_verified_at = NOW(), phone = $2, phone_verified_at = NOW() WHERE id = $1", [
+    userId,
+    `+9198${String(++phoneCounter).padStart(8, "0")}`,
+  ]);
+
 const storeBody = { storeName: "RK Electronics", storeSlug: "rk-electronics", legalBusinessName: "RK Pvt Ltd" };
 
 test("sellers complete a profile that starts pending; others are refused", async () => {
@@ -550,6 +557,7 @@ test("sellers complete a profile that starts pending; others are refused", async
   assert.equal((await create()).status, 401);
   assert.equal((await create(customer.body.accessToken)).status, 403);
 
+  await markContactsVerified(seller.body.user.id);
   const res = await create(seller.body.accessToken, {
     ...storeBody,
     verificationStatus: "approved",
@@ -565,6 +573,8 @@ test("sellers complete a profile that starts pending; others are refused", async
 test("seller profile rejects a taken slug, a bad slug and someone else's address", async () => {
   const one = await signup({ email: "one@example.com", role: "seller" });
   const two = await signup({ email: "two@example.com", role: "seller" });
+  await markContactsVerified(one.body.user.id);
+  await markContactsVerified(two.body.user.id);
   await api("POST", "/seller/profile", { token: one.body.accessToken, body: storeBody });
 
   const create = (body) => api("POST", "/seller/profile", { token: two.body.accessToken, body });
@@ -599,8 +609,114 @@ test("only admins can create admins, and the new admin can log in", async () => 
   assert.equal((await api("POST", "/admin/admins", { token, body })).status, 409);
 });
 
+const profileAs = (token) => api("POST", "/seller/profile", { token, body: storeBody });
+const missingFields = (res) => res.body.details.map((d) => d.field);
+
+async function verifyPhoneWithOtp(token, phone) {
+  assert.equal((await api("POST", "/auth/phone/send-verification", { token, body: { phone } })).status, 200);
+  const res = await api("POST", "/auth/phone/verify", { token, body: { phone, code: await codeFor(phone) } });
+  assert.equal(res.status, 200);
+}
+
+test("an email seller must verify both email and phone before creating a profile", async () => {
+  const seller = await signup({ email: "seller@example.com", role: "seller" });
+  const token = seller.body.accessToken;
+
+  const neither = await profileAs(token);
+  assert.equal(neither.status, 403);
+  assert.equal(neither.body.code, "SELLER_VERIFICATION_REQUIRED");
+  assert.deepEqual(missingFields(neither), ["email", "phone"]);
+
+  const code = await codeFor("seller@example.com");
+  await api("POST", "/auth/otp/verify-email", { body: { email: "seller@example.com", code } });
+  assert.deepEqual(missingFields(await profileAs(token)), ["phone"]);
+
+  await verifyPhoneWithOtp(token, "+919811111111");
+  assert.equal((await profileAs(token)).status, 201);
+});
+
+test("a Google seller skips email verification but still needs phone OTP", async () => {
+  mockGoogle();
+  const seller = await api("POST", "/auth/google", { body: { idToken: "t", termsAccepted: true, role: "seller" } });
+  const token = seller.body.accessToken;
+  assert.equal(seller.body.user.emailVerified, true);
+  assert.equal(seller.body.user.phoneVerified, false);
+
+  assert.deepEqual(missingFields(await profileAs(token)), ["phone"]);
+  await verifyPhoneWithOtp(token, "+919811111112");
+  assert.equal((await profileAs(token)).status, 201);
+});
+
+test("a phone seller skips phone verification but must add and verify an email", async () => {
+  const phone = "+919811111113";
+  await api("POST", "/auth/otp/send", { body: { channel: "phone", target: phone, purpose: "login" } });
+  const seller = await api("POST", "/auth/otp/login", {
+    body: { channel: "phone", target: phone, code: await codeFor(phone), name: "Ravi", termsAccepted: true, role: "seller" },
+  });
+  const token = seller.body.accessToken;
+
+  assert.deepEqual(missingFields(await profileAs(token)), ["email"]);
+
+  const email = "ravi@example.com";
+  assert.equal((await api("POST", "/auth/email/send-verification", { token, body: { email } })).status, 200);
+  const code = await codeFor(email);
+  const wrong = await api("POST", "/auth/email/verify", { token, body: { email, code: wrongCode(code) } });
+  assert.equal(wrong.status, 400);
+
+  const added = await api("POST", "/auth/email/verify", { token, body: { email, code } });
+  assert.equal(added.body.user.email, email);
+  assert.equal(added.body.user.emailVerified, true);
+  assert.equal((await profileAs(token)).status, 201);
+});
+
+test("a logged-in user can't take someone's email or swap to another with these endpoints", async () => {
+  const send = (token, email) => api("POST", "/auth/email/send-verification", { token, body: { email } });
+  assert.equal((await send(undefined, "a@example.com")).status, 401);
+
+  await signup({ email: "taken@example.com" });
+  const phone = "+919811111114";
+  await api("POST", "/auth/otp/send", { body: { channel: "phone", target: phone, purpose: "login" } });
+  const phoneUser = await api("POST", "/auth/otp/login", {
+    body: { channel: "phone", target: phone, code: await codeFor(phone), name: "Ravi", termsAccepted: true },
+  });
+  assert.equal((await send(phoneUser.body.accessToken, "taken@example.com")).status, 409);
+
+  const owner = await signup({ email: "owner@example.com" });
+  const other = await send(owner.body.accessToken, "other@example.com");
+  assert.equal(other.body.code, "EMAIL_ALREADY_SET");
+  const verify = await api("POST", "/auth/email/verify", {
+    token: owner.body.accessToken,
+    body: { email: "other@example.com", code: "123456" },
+  });
+  assert.equal(verify.body.code, "EMAIL_ALREADY_SET");
+
+  await db.query("UPDATE users SET email_verified_at = NOW() WHERE email = 'owner@example.com'");
+  const again = await send(owner.body.accessToken, "owner@example.com");
+  assert.equal(again.body.code, "EMAIL_ALREADY_VERIFIED");
+});
+
+test("a logged-in user can verify their own email through the account endpoints", async () => {
+  const { body } = await signup();
+  await codeFor("asha@example.com");
+  await db.query("UPDATE otp_codes SET created_at = NOW() - INTERVAL '2 minutes'");
+  const token = body.accessToken;
+  const email = "asha@example.com";
+  assert.equal((await api("POST", "/auth/email/send-verification", { token, body: { email } })).status, 200);
+  const res = await api("POST", "/auth/email/verify", { token, body: { email, code: await codeFor(email) } });
+  assert.equal(res.body.user.emailVerified, true);
+});
+
+test("customers don't have to verify anything", async () => {
+  const customer = await signup();
+  assert.equal(customer.body.user.emailVerified, false);
+  assert.equal((await api("GET", "/auth/me", { token: customer.body.accessToken })).status, 200);
+  assert.equal((await profileAs(customer.body.accessToken)).status, 403);
+  assert.equal((await profileAs(customer.body.accessToken)).body.code, "FORBIDDEN");
+});
+
 async function pendingProfile(email = "seller@example.com", slug = "rk-electronics") {
   const seller = await signup({ email, role: "seller" });
+  await markContactsVerified(seller.body.user.id);
   const res = await api("POST", "/seller/profile", {
     token: seller.body.accessToken,
     body: { ...storeBody, storeSlug: slug },

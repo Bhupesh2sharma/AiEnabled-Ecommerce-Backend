@@ -42,6 +42,8 @@ const otpLogin = z.discriminatedUnion("channel", [
 
 const resetPassword = z.object({ email, code, newPassword: password });
 
+const emailSendVerification = z.object({ email });
+const emailVerify = z.object({ email, code });
 const phoneSendVerification = z.object({ phone });
 const phoneVerify = z.object({ phone, code });
 
@@ -61,6 +63,8 @@ module.exports = {
   verifyEmail,
   otpLogin,
   resetPassword,
+  emailSendVerification,
+  emailVerify,
   phoneSendVerification,
   phoneVerify,
   googleLogin,

@@ -201,7 +201,7 @@ One profile per seller account (`users.role = 'seller'`).
 | `created_at` / `updated_at` / `deleted_at` | TIMESTAMPTZ | standard |
 
 **Rules (enforced in application code, not the DB)**
-- Only create a profile for a user whose `role = 'seller'`.
+- Only create a profile for a user whose `role = 'seller'` and whose email and phone are both verified.
 - `verified_by` must be a user with `role = 'admin'`.
 - `pickup_address_id` must belong to the same seller (`addresses.user_id = seller_profiles.user_id`).
 - Only `approved` sellers may list products or receive orders.

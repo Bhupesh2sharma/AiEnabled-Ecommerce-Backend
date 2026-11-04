@@ -113,6 +113,39 @@ async function resetPassword(req, res) {
   res.json({ message: "Password updated. Please log in again" });
 }
 
+// Accounts can verify their own email or add one if they have none (phone signups).
+// Changing an existing email is a separate feature, so a different address is refused.
+function assertCanUseEmail(user, email) {
+  if (user.email && user.email !== email) {
+    throw new ApiError(409, "This account already has a different email", { code: "EMAIL_ALREADY_SET" });
+  }
+}
+
+// Requires login, so the errors don't need hiding.
+async function sendEmailVerification(req, res) {
+  const { email } = req.body;
+  assertCanUseEmail(req.user, email);
+
+  if (req.user.email === email && req.user.email_verified_at) {
+    throw new ApiError(409, "This email is already verified", { code: "EMAIL_ALREADY_VERIFIED" });
+  }
+  const owner = await UserModel.findByEmail(email);
+  if (owner && owner.id !== req.user.id) {
+    throw new ApiError(409, "An account with this email already exists", { code: "CONFLICT" });
+  }
+
+  await issueOtp({ channel: "email", target: email, purpose: "verify_email" });
+  res.json({ message: "Code sent", resendAfterSeconds: RESEND_COOLDOWN_SECONDS });
+}
+
+async function verifyAccountEmail(req, res) {
+  const { email, code } = req.body;
+  assertCanUseEmail(req.user, email);
+  await verifyOtp({ channel: "email", target: email, purpose: "verify_email", code });
+  const updated = await UserModel.setVerifiedEmail(req.user.id, email);
+  res.json({ user: UserModel.toPublicUser(updated) });
+}
+
 // Adding a phone to an existing account. Requires login, so the errors don't need hiding.
 async function sendPhoneVerification(req, res) {
   const { phone } = req.body;
@@ -131,4 +164,13 @@ async function verifyPhone(req, res) {
   res.json({ user: UserModel.toPublicUser(updated) });
 }
 
-module.exports = { send, verifyEmail, login, resetPassword, sendPhoneVerification, verifyPhone };
+module.exports = {
+  send,
+  verifyEmail,
+  login,
+  resetPassword,
+  sendEmailVerification,
+  verifyAccountEmail,
+  sendPhoneVerification,
+  verifyPhone,
+};
