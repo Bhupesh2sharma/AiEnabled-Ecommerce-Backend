@@ -119,7 +119,8 @@ async function listOwned(sellerId, { status, page, limit }) {
   const [items, count] = await Promise.all([
     db.query(
       `SELECT p.*,
-              (SELECT COUNT(*)::int FROM product_variants v WHERE v.product_id = p.id AND v.deleted_at IS NULL) AS variant_count
+              (SELECT COUNT(*)::int FROM product_variants v WHERE v.product_id = p.id AND v.deleted_at IS NULL) AS variant_count,
+              (SELECT i.url FROM product_images i WHERE i.product_id = p.id AND i.is_primary) AS primary_image_url
        FROM products p WHERE ${where}
        ORDER BY p.created_at DESC
        LIMIT $3 OFFSET $4`,

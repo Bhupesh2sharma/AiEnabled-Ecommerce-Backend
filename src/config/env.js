@@ -33,6 +33,20 @@ const env = {
   SMS_DRIVER: process.env.SMS_DRIVER || "console",
   FAST2SMS_API_KEY: process.env.FAST2SMS_API_KEY,
 
+  // Image storage: r2 or s3. Uploads return 503 until this is set; the rest of the API works without it.
+  STORAGE_DRIVER: process.env.STORAGE_DRIVER,
+  R2_ACCOUNT_ID: process.env.R2_ACCOUNT_ID,
+  R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID,
+  R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY,
+  R2_BUCKET: process.env.R2_BUCKET,
+  R2_PUBLIC_URL: process.env.R2_PUBLIC_URL,
+  S3_REGION: process.env.S3_REGION,
+  S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID,
+  S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY,
+  S3_BUCKET: process.env.S3_BUCKET,
+  S3_PUBLIC_URL: process.env.S3_PUBLIC_URL,
+  S3_ENDPOINT: process.env.S3_ENDPOINT,
+
   // Google login is unavailable until this is set
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
 };
@@ -55,5 +69,12 @@ requireForDriver("EMAIL_DRIVER", env.EMAIL_DRIVER, {
   resend: ["RESEND_API_KEY", "EMAIL_FROM"],
 });
 requireForDriver("SMS_DRIVER", env.SMS_DRIVER, { console: [], fast2sms: ["FAST2SMS_API_KEY"] });
+
+if (env.STORAGE_DRIVER) {
+  requireForDriver("STORAGE_DRIVER", env.STORAGE_DRIVER, {
+    r2: ["R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET", "R2_PUBLIC_URL"],
+    s3: ["S3_REGION", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "S3_BUCKET", "S3_PUBLIC_URL"],
+  });
+}
 
 module.exports = env;

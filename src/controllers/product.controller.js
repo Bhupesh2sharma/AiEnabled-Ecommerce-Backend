@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const db = require("../config/db");
 const BrandModel = require("../models/brand.model");
 const CategoryModel = require("../models/category.model");
+const ProductImageModel = require("../models/productImage.model");
 const ProductModel = require("../models/product.model");
 const ProductVariantModel = require("../models/productVariant.model");
 const ApiError = require("../utils/ApiError");
@@ -23,10 +24,19 @@ const LEGAL_FIELDS = [
 const productNotFound = () => new ApiError(404, "Product not found", { code: "NOT_FOUND" });
 const variantNotFound = () => new ApiError(404, "Variant not found", { code: "NOT_FOUND" });
 
-const withVariants = (product, variants) => ({
+const withDetails = (product, variants, images) => ({
   ...ProductModel.toSellerProduct(product),
   variants: variants.map(ProductVariantModel.toSellerVariant),
+  images: images.map(ProductImageModel.toSellerImage),
 });
+
+async function loadDetails(product) {
+  const [variants, images] = await Promise.all([
+    ProductVariantModel.listForProduct(product.id),
+    ProductImageModel.listForProduct(product.id),
+  ]);
+  return withDetails(product, variants, images);
+}
 
 // A short random ending keeps URLs unique, because two sellers can use the same title.
 function makeSlug(title) {
@@ -105,7 +115,7 @@ async function createProduct(req, res) {
     return ProductModel.create(req.sellerProfile.id, makeSlug(fields.title), fields, client);
   });
 
-  res.status(201).json({ product: withVariants(product, []) });
+  res.status(201).json({ product: withDetails(product, [], []) });
 }
 
 // GET /api/seller/products: my products in any status, newest first.
@@ -113,7 +123,11 @@ async function listProducts(req, res) {
   const { page, limit } = req.query;
   const { rows, total } = await ProductModel.listOwned(req.sellerProfile.id, req.query);
   res.json({
-    products: rows.map((row) => ({ ...ProductModel.toSellerProduct(row), variantCount: row.variant_count })),
+    products: rows.map((row) => ({
+      ...ProductModel.toSellerProduct(row),
+      variantCount: row.variant_count,
+      primaryImageUrl: row.primary_image_url,
+    })),
     pagination: { page, limit, total },
   });
 }
@@ -122,8 +136,7 @@ async function listProducts(req, res) {
 async function getProduct(req, res) {
   const product = await ProductModel.findOwned(req.params.id, req.sellerProfile.id);
   if (!product) throw productNotFound();
-  const variants = await ProductVariantModel.listForProduct(product.id);
-  res.json({ product: withVariants(product, variants) });
+  res.json({ product: await loadDetails(product) });
 }
 
 // A product can move category only if its variants still fit the new one.
@@ -183,8 +196,7 @@ async function updateProduct(req, res) {
     return ProductModel.update(current.id, fields, client);
   });
 
-  const variants = await ProductVariantModel.listForProduct(product.id);
-  res.json({ product: withVariants(product, variants) });
+  res.json({ product: await loadDetails(product) });
 }
 
 // DELETE /api/seller/products/:id: soft delete, along with its variants.

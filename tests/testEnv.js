@@ -9,3 +9,8 @@ process.env.BCRYPT_SALT_ROUNDS = "4";
 process.env.EMAIL_DRIVER = "console";
 process.env.SMS_DRIVER = "console";
 process.env.GOOGLE_CLIENT_ID = "test-client";
+
+// Tests use a fake storage driver, so real keys in .env are never touched.
+for (const name of Object.keys(process.env)) {
+  if (name === "STORAGE_DRIVER" || name.startsWith("R2_") || name.startsWith("S3_")) delete process.env[name];
+}

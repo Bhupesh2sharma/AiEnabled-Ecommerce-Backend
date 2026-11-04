@@ -8,7 +8,7 @@ How categories, brands, variant options and sellers' products work. The code is 
 **Related:** [DATABASE.md](DATABASE.md) (tables), [AUTH.md](AUTH.md) (login and roles) and
 [the Postman collection](../postman/Ecommerce-API.postman_collection.json) (runnable requests).
 
-**Built so far:** categories, brands, variant options, sellers creating, editing and deleting products and variants, and stock changes. Images, publishing and public product browsing aren't built yet, so every new product stays a draft for now.
+**Built so far:** categories, brands, variant options, sellers creating, editing and deleting products and variants, stock changes and image uploads. Publishing and public product browsing aren't built yet, so every new product stays a draft for now.
 
 ## Categories
 
@@ -103,6 +103,50 @@ Stock changes only through `POST /seller/variants/:id/stock`, and every change a
 - **Low stock:** variants return `isLowStock`, true at or below `lowStockThreshold` (default 5). Alerts aren't built yet.
 - **History:** kept with the variant and hidden from the API once the variant is deleted.
 
+## Images
+
+Files live in Cloudflare R2 or AWS S3. `STORAGE_DRIVER` chooses where new uploads go, and each image records its provider,
+so old images keep working and can still be deleted after a switch. **Until storage is set up, upload endpoints return
+503 `STORAGE_NOT_CONFIGURED`. Everything else works without it.**
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant A as Backend
+    participant S as R2 or S3
+    B->>A: POST /seller/uploads/signature (type, size)
+    A-->>B: uploadUrl, storageKey (valid 5 minutes)
+    B->>S: PUT the file to uploadUrl, with the same Content-Type
+    B->>A: POST /seller/products/:id/images (storageKey)
+    A->>S: Check its real size, type and first bytes
+    A-->>B: The image, or an error (bad files are deleted)
+```
+
+Large files go straight to storage, so they never pass through this server.
+
+| Rule | Detail |
+|---|---|
+| Files | JPEG, PNG or WebP, at most 5 MB. SVG isn't allowed, because it can contain scripts |
+| Checks | Size, type and first bytes are read from the stored file when attaching, because R2 can't enforce a size limit during upload, and a declared type can't be trusted |
+| Ownership | Each seller uploads to their own folder and can only attach files from it |
+| Limit | At most 8 images per product. One file can be attached once |
+| Primary | The first image is primary. Setting another moves the flag, and deleting the primary promotes the next |
+| Variants | An image can be tied to a variant on the same product. Deleting the variant keeps the image |
+| Deleting | Also deletes the file. If that fails, the image is still removed and the failure logged. A published product must keep one image |
+
+Category images and brand logos use `POST /admin/uploads/signature`; save the returned `publicUrl` as `imageUrl` or `logoUrl`. These aren't checked after upload, because admins are trusted.
+
+**Setup, outside the code:**
+1. Create a bucket, and an API token with read and write access to it.
+2. Add a CORS rule allowing `PUT` from `CLIENT_URL`, with the `Content-Type` header.
+3. Give the bucket a public address. R2's `r2.dev` addresses are rate-limited and for development only, so production needs a custom domain.
+4. Set `STORAGE_DRIVER` and the matching settings in `.env`, listed in `.env.example`.
+
+**Known gaps:**
+- Nothing resizes images, so originals are served. The frontend should compress them before upload, or Cloudflare image transformations can be added later.
+- Files uploaded but never attached stay in the bucket, and so do files of soft-deleted products. A scheduled cleanup can be added later.
+- Store logos and banners are still plain URLs.
+
 ## Endpoints
 
 All paths start with `/api`.
@@ -138,13 +182,18 @@ All paths start with `/api`.
 | `DELETE /seller/variants/:id` | Seller | Soft delete a variant |
 | `POST /seller/variants/:id/stock` | Seller | Change stock, with a reason |
 | `GET /seller/variants/:id/stock-movements` | Seller | Stock history, newest first; `page`, `limit` |
+| `POST /seller/uploads/signature` | Seller | Get a URL to upload one image |
+| `POST /seller/products/:id/images` | Seller | Attach an uploaded image |
+| `PATCH /seller/images/:id` | Seller | Edit an image's text, order or variant, or make it primary |
+| `DELETE /seller/images/:id` | Seller | Delete an image and its file |
+| `POST /admin/uploads/signature` | Admin | Get a URL to upload a category image or brand logo |
 
-Request bodies are in `src/validators/catalog.validator.js`, `src/validators/product.validator.js` and the Postman collection. Image and logo fields hold an `http` or `https` URL for now; uploads arrive with image storage.
+Request bodies are in `src/validators/catalog.validator.js`, `src/validators/product.validator.js` and the Postman collection. Category image and brand logo fields hold an `http` or `https` URL.
 
 ## Rate limits
 
 Public catalog routes allow 300 requests per minute per IP, because one page view makes several requests. Over the limit
-returns 429 `RATE_LIMITED`. Admin routes need a login and aren't limited.
+returns 429 `RATE_LIMITED`. Upload URLs are limited to 300 per hour per IP, because files cost money. Other admin and seller routes need a login and aren't limited.
 
 ## Errors
 
@@ -165,6 +214,10 @@ Errors use the format in [AUTH.md](AUTH.md).
 | 400 | `GST_NOT_ALLOWED` | A seller with no GSTIN must use a GST rate of 0 |
 | 400 | `VARIANT_LIMIT_REACHED` | The product already has 100 variants |
 | 400 | `STOCK_LIMIT_REACHED` | Stock would go above 1,000,000,000 |
+| 400 | `INVALID_VARIANT` | This variant isn't on this product |
+| 400 | `INVALID_UPLOAD` | The file isn't in your folder, or failed the image checks |
+| 400 | `UPLOAD_NOT_FOUND` | No file has been uploaded for this key |
+| 400 | `IMAGE_LIMIT_REACHED` | The product already has 8 images |
 | 403 | `SELLER_PROFILE_REQUIRED` | Create a store profile first |
 | 403 | `PROFILE_SUSPENDED` | A suspended seller can only read |
 | 404 | `NOT_FOUND` | The record doesn't exist, or belongs to another seller |
@@ -175,8 +228,11 @@ Errors use the format in [AUTH.md](AUTH.md).
 | 409 | `OPTION_IN_USE` | A category uses this option |
 | 409 | `VARIANTS_DONT_FIT_CATEGORY` | Edit or remove these variants before moving the product |
 | 409 | `LAST_VARIANT` | A published product must keep a variant |
+| 409 | `LAST_IMAGE` | A published product must keep an image |
 | 409 | `INSUFFICIENT_STOCK` | The change would take stock below 0 |
 | 409 | `INITIAL_STOCK_ALREADY_SET` | This variant already has history; use `restock` or `correction` |
+| 502 | `STORAGE_ERROR` | R2 or S3 couldn't be reached |
+| 503 | `STORAGE_NOT_CONFIGURED` | Image storage isn't set up yet |
 
 ## Where the code is
 
@@ -191,6 +247,10 @@ Errors use the format in [AUTH.md](AUTH.md).
 | `src/models/product.model.js`, `productVariant.model.js` | SQL |
 | `src/models/stock.model.js` | The only code that changes stock |
 | `src/middlewares/sellerProfile.js` | Requires a store, and refuses suspended sellers' changes |
+| `src/controllers/image.controller.js`, `src/models/productImage.model.js` | Uploads and product images |
+| `src/services/storage/` | R2 and S3 drivers |
+| `src/utils/imageFile.js` | Allowed image types and the file checks |
 | `src/utils/variantOptions.js`, `gst.js` | Option checks and allowed GST rates |
 | `src/validators/catalog.validator.js`, `product.validator.js` | Request rules |
-| `tests/catalog.test.js`, `tests/products.test.js` | API tests |
+| `tests/catalog.test.js`, `products.test.js`, `images.test.js` | API tests |
+| `tests/storage.test.js` | The real storage code. Its upload tests run against an S3-compatible server when `TEST_S3_ENDPOINT`, `TEST_S3_ACCESS_KEY`, `TEST_S3_SECRET_KEY` and `TEST_S3_BUCKET` are set, and are skipped otherwise |

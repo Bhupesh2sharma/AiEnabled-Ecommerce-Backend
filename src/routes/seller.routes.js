@@ -1,10 +1,12 @@
 // URLs under /api/seller. Every route here requires a seller login.
 
 const { Router } = require("express");
+const image = require("../controllers/image.controller");
 const product = require("../controllers/product.controller");
 const seller = require("../controllers/seller.controller");
 const stock = require("../controllers/stock.controller");
 const { authenticate, authorize } = require("../middlewares/auth");
+const limit = require("../middlewares/rateLimit");
 const { loadSellerProfile, requireNotSuspended } = require("../middlewares/sellerProfile");
 const validate = require("../middlewares/validate");
 const asyncHandler = require("../utils/asyncHandler");
@@ -48,5 +50,16 @@ router.get(
   validate(schemas.paging, "query"),
   asyncHandler(stock.listMovements)
 );
+
+router.post(
+  "/uploads/signature",
+  limit.uploads,
+  canWrite,
+  validate(schemas.createUpload),
+  asyncHandler(image.createSellerUpload)
+);
+router.post("/products/:id/images", canWrite, idParam, validate(schemas.attachImage), asyncHandler(image.attachImage));
+router.patch("/images/:id", canWrite, idParam, validate(schemas.updateImage), asyncHandler(image.updateImage));
+router.delete("/images/:id", canWrite, idParam, asyncHandler(image.deleteImage));
 
 module.exports = router;

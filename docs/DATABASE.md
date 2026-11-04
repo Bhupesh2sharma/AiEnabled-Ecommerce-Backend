@@ -446,7 +446,8 @@ The file is in R2 or S3; this row records where.
 | `created_at` / `updated_at` | TIMESTAMPTZ | hard deleted: no `deleted_at` |
 
 **Rules (enforced in application code, not the DB)**
-- At most 8 images per product.
+- At most 8 images per product. A published product must keep at least one.
+- A file is attached only after its size, type and first bytes are checked in storage.
 
 ### `stock_movements`
 Migration: `20261104141118_create_stock_movements.sql`

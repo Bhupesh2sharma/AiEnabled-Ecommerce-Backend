@@ -22,6 +22,7 @@ const UNIQUE_MESSAGES = {
   variant_option_values_code_unique: "This option already has a value with this code",
   product_variants_sku_unique: "You already have a variant with this SKU",
   product_variants_options_unique: "This product already has a variant with these options",
+  product_images_storage_unique: "This file is already attached to a product",
 };
 
 // Express treats a middleware with four parameters as the error handler.

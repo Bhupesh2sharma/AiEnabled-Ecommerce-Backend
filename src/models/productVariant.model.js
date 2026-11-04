@@ -118,7 +118,9 @@ async function update(id, fields, client) {
   return rows[0];
 }
 
+// Its images stay on the product, no longer tied to this variant.
 async function softDelete(id, client) {
+  await client.query("UPDATE product_images SET variant_id = NULL WHERE variant_id = $1", [id]);
   await client.query("UPDATE product_variants SET deleted_at = NOW() WHERE id = $1", [id]);
 }
 

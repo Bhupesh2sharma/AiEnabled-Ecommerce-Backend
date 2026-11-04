@@ -3,6 +3,7 @@
 
 const { z } = require("zod");
 const { GST_RATES } = require("../utils/gst");
+const { IMAGE_TYPES, MAX_IMAGE_BYTES } = require("../utils/imageFile");
 
 const uuid = z.uuid("Invalid id");
 const text = (max) => z.string().trim().min(1, "Can't be blank").max(max);
@@ -100,6 +101,29 @@ const paging = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
+const contentType = z.enum(Object.keys(IMAGE_TYPES), { error: "Only JPEG, PNG and WebP images are allowed" });
+const sizeBytes = z.number().int().positive().max(MAX_IMAGE_BYTES, "Images must be 5 MB or smaller");
+
+const createUpload = z.strictObject({ contentType, sizeBytes });
+const createAdminUpload = z.strictObject({ contentType, sizeBytes, purpose: z.enum(["category", "brand"]) });
+
+const attachImage = z.strictObject({
+  storageKey: z.string().max(255),
+  variantId: uuid.nullable().optional(),
+  altText: text(200).nullable().optional(),
+  isPrimary: z.boolean().optional(),
+});
+
+// isPrimary can only be turned on: making another image primary is what turns this one off.
+const updateImage = z
+  .strictObject({
+    variantId: uuid.nullable().optional(),
+    altText: text(200).nullable().optional(),
+    sortOrder: z.number().int().min(0).max(1000).optional(),
+    isPrimary: z.literal(true).optional(),
+  })
+  .refine(atLeastOneField, NOTHING_TO_UPDATE);
+
 const idParam = z.object({ id: uuid });
 const listProducts = z.object({
   status: z.enum(["draft", "active", "paused"]).optional(),
@@ -107,4 +131,17 @@ const listProducts = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
-module.exports = { createProduct, updateProduct, createVariant, updateVariant, changeStock, paging, idParam, listProducts };
+module.exports = {
+  createProduct,
+  updateProduct,
+  createVariant,
+  updateVariant,
+  changeStock,
+  createUpload,
+  createAdminUpload,
+  attachImage,
+  updateImage,
+  paging,
+  idParam,
+  listProducts,
+};

@@ -50,6 +50,13 @@ const limiters = {
     message: "Too many requests. Try again shortly",
   }),
 
+  // Each upload URL can add a file to paid storage.
+  uploads: createLimiter({
+    windowMs: HOUR,
+    limit: 300,
+    message: "Too many uploads. Try again later",
+  }),
+
   // Each request can cost a paid SMS or email, so requests count whether or not a code is sent.
   otpSend: createLimiter({
     windowMs: HOUR,

@@ -4,13 +4,16 @@ const { Router } = require("express");
 const admin = require("../controllers/admin.controller");
 const brand = require("../controllers/brand.controller");
 const category = require("../controllers/category.controller");
+const image = require("../controllers/image.controller");
 const variantOption = require("../controllers/variantOption.controller");
 const { authenticate, authorize } = require("../middlewares/auth");
+const limit = require("../middlewares/rateLimit");
 const validate = require("../middlewares/validate");
 const asyncHandler = require("../utils/asyncHandler");
 const { sellerIdParam, listSellers, sellerDecision } = require("../validators/admin.validator");
 const { createAdmin } = require("../validators/auth.validator");
 const catalog = require("../validators/catalog.validator");
+const { createAdminUpload } = require("../validators/product.validator");
 
 const router = Router();
 
@@ -77,6 +80,13 @@ router.delete(
   "/variant-options/:id/values/:valueId",
   validate(catalog.valueParams, "params"),
   asyncHandler(variantOption.removeValue)
+);
+
+router.post(
+  "/uploads/signature",
+  limit.uploads,
+  validate(createAdminUpload),
+  asyncHandler(image.createAdminUpload)
 );
 
 module.exports = router;

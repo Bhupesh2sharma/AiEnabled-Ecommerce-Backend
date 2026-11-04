@@ -144,6 +144,21 @@
       "key": "sku",
       "value": "SAMPLE-SKU-1",
       "type": "string"
+    },
+    {
+      "key": "uploadUrl",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "storageKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "imageId",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -1296,6 +1311,182 @@
           "response": []
         },
         {
+          "name": "Get Upload URL",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/seller/uploads/signature",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seller",
+                "uploads",
+                "signature"
+              ]
+            },
+            "description": "Step 1 of an upload. `contentType` is image/jpeg, image/png or image/webp; `sizeBytes` is at most 5 MB. Saves `uploadUrl` and `storageKey`. 503 `STORAGE_NOT_CONFIGURED` until storage is set up.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contentType\": \"image/png\",\n  \"sizeBytes\": 1024\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('uploadUrl', body.upload.uploadUrl);",
+                  "  pm.collectionVariables.set('storageKey', body.upload.storageKey);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upload File to Storage",
+          "request": {
+            "method": "PUT",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "image/png"
+              }
+            ],
+            "url": {
+              "raw": "{{uploadUrl}}"
+            },
+            "body": {
+              "mode": "file",
+              "file": {}
+            },
+            "description": "Not a backend request: this sends the file straight to R2 or S3. Choose a PNG in the Body tab. The Content-Type must match what Get Upload URL was asked for. The URL expires after 5 minutes and uses no login."
+          },
+          "response": []
+        },
+        {
+          "name": "Attach Product Image",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/seller/products/{{productId}}/images",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seller",
+                "products",
+                "{{productId}}",
+                "images"
+              ]
+            },
+            "description": "Step 3 of an upload. Checks the stored file's real size, type and first bytes; a bad file is deleted (400 `INVALID_UPLOAD`). The first image becomes primary. `variantId` is optional. At most 8 per product. Saves `imageId`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storageKey\": \"{{storageKey}}\",\n  \"altText\": \"Front view\",\n  \"isPrimary\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('imageId', body.image.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Product Image",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/seller/images/{{imageId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seller",
+                "images",
+                "{{imageId}}"
+              ]
+            },
+            "description": "Send only the fields to change: `altText`, `sortOrder`, `variantId`, or `isPrimary: true`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"altText\": \"Updated front view\",\n  \"sortOrder\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Product Image",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/seller/images/{{imageId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seller",
+                "images",
+                "{{imageId}}"
+              ]
+            },
+            "description": "Deletes the image and its file. The next image becomes primary. 409 `LAST_IMAGE` if a published product would have none. Returns 204."
+          },
+          "response": []
+        },
+        {
           "name": "Delete Variant",
           "request": {
             "method": "DELETE",
@@ -2111,6 +2302,40 @@
               ]
             },
             "description": "All brands, including inactive ones."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Admin Upload URL",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/uploads/signature",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "uploads",
+                "signature"
+              ]
+            },
+            "description": "For a category image or brand logo. `purpose` is category or brand. Upload the file to the returned `uploadUrl`, then save `publicUrl` as the category's `imageUrl` or the brand's `logoUrl`. 503 `STORAGE_NOT_CONFIGURED` until storage is set up.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contentType\": \"image/png\",\n  \"sizeBytes\": 1024,\n  \"purpose\": \"category\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "response": []
         },
