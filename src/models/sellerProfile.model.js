@@ -70,6 +70,64 @@ async function userOwnsAddress(userId, addressId) {
   return rowCount === 1;
 }
 
+// Finds a seller's own profile.
+async function findByUserId(userId) {
+  const { rows } = await db.query("SELECT * FROM seller_profiles WHERE user_id = $1 AND deleted_at IS NULL", [
+    userId,
+  ]);
+  return rows[0] ?? null;
+}
+
+// Same as findByUserId, but locks the row until the transaction ends.
+async function findByUserIdForUpdate(userId, client) {
+  const { rows } = await client.query(
+    "SELECT * FROM seller_profiles WHERE user_id = $1 AND deleted_at IS NULL FOR UPDATE",
+    [userId]
+  );
+  return rows[0] ?? null;
+}
+
+// The only columns a seller can change. Column names come from this list, never from the request.
+const EDITABLE_COLUMNS = {
+  storeName: "store_name",
+  storeSlug: "store_slug",
+  description: "description",
+  logoUrl: "logo_url",
+  bannerUrl: "banner_url",
+  supportEmail: "support_email",
+  supportPhone: "support_phone",
+  businessType: "business_type",
+  legalBusinessName: "legal_business_name",
+  taxId: "tax_id",
+  pickupAddressId: "pickup_address_id",
+};
+
+// Updates the fields that were sent. resetReview returns the profile to `pending` and clears the last decision.
+async function update(id, fields, { resetReview = false } = {}, client = db) {
+  const assignments = [];
+  const values = [id];
+  for (const [field, column] of Object.entries(EDITABLE_COLUMNS)) {
+    if (fields[field] !== undefined) {
+      values.push(fields[field]);
+      assignments.push(`${column} = $${values.length}`);
+    }
+  }
+  if (resetReview) {
+    assignments.push(
+      "verification_status = 'pending'",
+      "rejection_reason = NULL",
+      "verified_at = NULL",
+      "verified_by = NULL"
+    );
+  }
+
+  const { rows } = await client.query(
+    `UPDATE seller_profiles SET ${assignments.join(", ")} WHERE id = $1 RETURNING *`,
+    values
+  );
+  return rows[0];
+}
+
 // Finds a live profile by id.
 async function findById(id) {
   const { rows } = await db.query("SELECT * FROM seller_profiles WHERE id = $1 AND deleted_at IS NULL", [id]);
@@ -109,6 +167,9 @@ module.exports = {
   create,
   userOwnsAddress,
   findById,
+  findByUserId,
+  findByUserIdForUpdate,
+  update,
   listByStatus,
   decideVerification,
 };

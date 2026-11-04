@@ -190,7 +190,7 @@ One profile per seller account (`users.role = 'seller'`).
 | `support_email` / `support_phone` | VARCHAR | customer-facing contact; phone E.164 |
 | `business_type` | `seller_business_type` | `individual` (default), `company` |
 | `legal_business_name` | VARCHAR(200) | required |
-| `tax_id` | VARCHAR(50) | GSTIN / EIN / VAT |
+| `tax_id` | VARCHAR(50) | optional GSTIN, uppercase, format checked by the app |
 | `pickup_address_id` | UUID | FK → `addresses.id`, SET NULL |
 | `payout_account_id` | VARCHAR(100) | payment-provider account reference (Razorpay Route / Stripe Connect); never raw bank details |
 | `verification_status` | `seller_verification_status` | `pending` (default), `approved`, `rejected`, `suspended` |
@@ -205,6 +205,8 @@ One profile per seller account (`users.role = 'seller'`).
 - `verified_by` must be a user with `role = 'admin'`.
 - `pickup_address_id` must belong to the same seller (`addresses.user_id = seller_profiles.user_id`).
 - Only `approved` sellers may list products or receive orders.
+- Editing a `rejected` profile, or the legal details of an `approved` one, returns it to `pending` and clears
+  `rejection_reason`, `verified_at` and `verified_by`. `suspended` profiles can't be edited.
 - Admins review `pending` or `rejected` profiles. An `approved` profile can't be rejected
   (`suspended` is for removing an approval, and has no endpoint yet).
 

@@ -857,7 +857,7 @@
     },
     {
       "name": "Seller",
-      "description": "Requires a seller account with both email and phone verified.",
+      "description": "Create a store profile, which requires a seller account with both email and phone verified, then view or edit it.",
       "item": [
         {
           "name": "Create Store Profile",
@@ -904,6 +904,58 @@
               }
             }
           ]
+        },
+        {
+          "name": "Get Store Profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/seller/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seller",
+                "profile"
+              ]
+            },
+            "description": "Shows the seller's profile, `verificationStatus` and any `rejectionReason`. 404 `NOT_FOUND` until a profile is created."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Store Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/seller/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seller",
+                "profile"
+              ]
+            },
+            "description": "Send only the fields to change; `null` clears an optional field. `taxId` is an optional GSTIN. Editing a rejected profile, or `legalBusinessName`, `businessType` or `taxId` on an approved one, returns it to `pending`. 409 `PROFILE_SUSPENDED` if suspended, 409 if the slug is taken.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Updated store description\",\n  \"taxId\": \"22AAAAA0000A1Z5\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
         }
       ]
     },

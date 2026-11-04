@@ -141,7 +141,20 @@ A seller needs both email and phone verified before creating a profile, otherwis
 | Phone OTP | Add and verify with OTP | Already verified |
 
 Each seller has one profile. Sellers can't set their own status or commission, and a pickup address must
-be their own. Only approved sellers should list products, which must be enforced when products are added.
+be their own. `GET /seller/profile` shows their status and any rejection reason.
+
+`PATCH /seller/profile` edits the profile, and sending `null` clears an optional field:
+
+| Current status | Editing | Result |
+|---|---|---|
+| `pending` | Anything | Stays `pending` |
+| `approved` | Storefront details | Stays `approved` |
+| `approved` | Legal details: `legalBusinessName`, `businessType` or `taxId` | Back to `pending` for review |
+| `rejected` | Anything | Back to `pending`, reason cleared |
+| `suspended` | Anything | 409 `PROFILE_SUSPENDED` |
+
+`taxId` is the seller's GSTIN. It's optional, and only its format is checked, not whether it's real.
+ Only approved sellers should list products, which must be enforced when products are added.
 
 ## Admins
 
@@ -225,6 +238,8 @@ All paths start with `/api`.
 | `POST /auth/phone/verify` | Login | Add the phone |
 | `POST /auth/google` | Public | Sign up or log in with Google |
 | `POST /seller/profile` | Seller | Create the store profile |
+| `GET /seller/profile` | Seller | See my profile and approval status |
+| `PATCH /seller/profile` | Seller | Edit my profile |
 | `POST /admin/admins` | Admin | Create another admin |
 | `GET /admin/sellers` | Admin | List profiles; `?status=` defaults to `pending` |
 | `PATCH /admin/sellers/:id/verification` | Admin | Approve or reject a profile |
@@ -261,6 +276,7 @@ In development, 5xx responses also include `stack`. Elsewhere, unexpected errors
 | 409 | `EMAIL_ALREADY_SET` | Account already has a different email |
 | 409 | `EMAIL_ALREADY_VERIFIED` | Email is already verified |
 | 409 | `INVALID_STATUS_CHANGE` | Profile has already been approved |
+| 409 | `PROFILE_SUSPENDED` | A suspended profile can't be edited |
 | 429 | `ACCOUNT_LOCKED` | Too many failed logins on this account |
 | 429 | `RATE_LIMITED` | Too many requests from this IP |
 | 429 | `OTP_COOLDOWN` | Wait before requesting another code |
@@ -319,6 +335,6 @@ its data**, and they refuse to run if it matches `DATABASE_URL`.
 - **SMS costs:** IP limits don't stop an attacker using many IPs. There is no overall daily SMS cap.
 - **Refresh token reuse:** a reused token is rejected, but the session it was replaced by stays active.
 - **Multiple servers:** rate limits need a shared store such as Redis.
-- **Missing endpoints:** seller suspension, `GET /seller/profile` (so sellers can see their status and rejection reason),
+- **Missing endpoints:** seller suspension,
   changing email or password while logged in, and removing a linked Google account.
 - **Cleanup:** old OTP rows and expired sessions are only purged during later sends and logins by the same user or target.

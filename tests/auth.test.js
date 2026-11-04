@@ -913,6 +913,144 @@ test("the frontend can read Retry-After, and CORS preflights aren't limited", as
   assert.match(limited.headers.get("access-control-expose-headers"), /Retry-After/);
 });
 
+async function approvedSeller(email = "seller@example.com", slug = "rk-electronics") {
+  const token = await makeAdmin(`admin-${slug}@example.com`);
+  const { id, sellerToken } = await pendingProfile(email, slug);
+  await decide(token, id, { status: "approved" });
+  return { adminToken: token, id, sellerToken };
+}
+
+const patchProfile = (token, body) => api("PATCH", "/seller/profile", { token, body });
+const GSTIN = "22AAAAA0000A1Z5";
+
+test("a seller can read their profile, status and rejection reason", async () => {
+  const seller = await signup({ email: "seller@example.com", role: "seller" });
+  const token = seller.body.accessToken;
+  const none = await api("GET", "/seller/profile", { token });
+  assert.equal(none.status, 404);
+  assert.equal(none.body.code, "NOT_FOUND");
+
+  await markContactsVerified(seller.body.user.id);
+  const { body } = await profileAs(token);
+  const admin = await makeAdmin();
+  await decide(admin, body.profile.id, { status: "rejected", reason: "Missing GSTIN" });
+
+  const res = await api("GET", "/seller/profile", { token });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.profile.verificationStatus, "rejected");
+  assert.equal(res.body.profile.rejectionReason, "Missing GSTIN");
+});
+
+test("only sellers can read or edit a seller profile", async () => {
+  const customer = await signup();
+  assert.equal((await api("GET", "/seller/profile")).status, 401);
+  assert.equal((await api("GET", "/seller/profile", { token: customer.body.accessToken })).status, 403);
+  assert.equal((await patchProfile(undefined, { storeName: "X" })).status, 401);
+  assert.equal((await patchProfile(customer.body.accessToken, { storeName: "X" })).status, 403);
+});
+
+test("editing the storefront keeps an approved seller approved, and null clears a field", async () => {
+  const { sellerToken } = await approvedSeller();
+  const res = await patchProfile(sellerToken, { storeName: "New Name", description: "Hello" });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.profile.storeName, "New Name");
+  assert.equal(res.body.profile.description, "Hello");
+  assert.equal(res.body.profile.verificationStatus, "approved");
+
+  const cleared = await patchProfile(sellerToken, { description: null });
+  assert.equal(cleared.body.profile.description, null);
+  assert.equal(cleared.body.profile.storeName, "New Name");
+});
+
+test("a seller can't edit admin-only fields or send nothing, or clear required fields", async () => {
+  const { sellerToken } = await pendingProfile();
+  const res = await patchProfile(sellerToken, {
+    storeName: "Name",
+    verificationStatus: "approved",
+    commissionRate: 0,
+    verifiedBy: "someone",
+  });
+  assert.equal(res.body.profile.verificationStatus, "pending");
+  assert.equal(res.body.profile.commissionRate, "10.00");
+
+  assert.equal((await patchProfile(sellerToken, {})).status, 400);
+  assert.equal((await patchProfile(sellerToken, { verificationStatus: "approved" })).status, 400);
+  assert.equal((await patchProfile(sellerToken, { storeName: null })).status, 400);
+  assert.equal((await patchProfile(sellerToken, { legalBusinessName: null })).status, 400);
+});
+
+test("GSTIN is optional, format-checked on create and edit, and stored uppercase", async () => {
+  const seller = await signup({ email: "seller@example.com", role: "seller" });
+  const token = seller.body.accessToken;
+  await markContactsVerified(seller.body.user.id);
+
+  const bad = await api("POST", "/seller/profile", { token, body: { ...storeBody, taxId: "ABC123" } });
+  assert.equal(bad.status, 400);
+  const created = await api("POST", "/seller/profile", { token, body: { ...storeBody, taxId: GSTIN.toLowerCase() } });
+  assert.equal(created.body.profile.taxId, GSTIN);
+
+  assert.equal((await patchProfile(token, { taxId: "22AAAAA0000A1Z" })).status, 400);
+  assert.equal((await patchProfile(token, { taxId: null })).body.profile.taxId, null);
+});
+
+test("changing legal details on an approved profile sends it back for review", async () => {
+  for (const [i, change] of [{ legalBusinessName: "Other Ltd" }, { businessType: "company" }, { taxId: GSTIN }].entries()) {
+    const { sellerToken, adminToken, id } = await approvedSeller(`s${i}@example.com`, `store-${i}`);
+    const res = await patchProfile(sellerToken, change);
+    assert.equal(res.body.profile.verificationStatus, "pending", Object.keys(change)[0]);
+
+    const listed = await api("GET", "/admin/sellers", { token: adminToken });
+    const row = listed.body.profiles.find((p) => p.id === id);
+    assert.equal(row.verifiedAt, null);
+    assert.equal(row.verifiedBy, null);
+  }
+});
+
+test("resending the same legal details doesn't trigger a review", async () => {
+  const { sellerToken } = await approvedSeller();
+  const res = await patchProfile(sellerToken, { legalBusinessName: storeBody.legalBusinessName, businessType: "individual" });
+  assert.equal(res.body.profile.verificationStatus, "approved");
+});
+
+test("editing a rejected profile returns it to pending and clears the reason", async () => {
+  const token = await makeAdmin();
+  const { id, sellerToken } = await pendingProfile();
+  await decide(token, id, { status: "rejected", reason: "Blurry logo" });
+
+  const res = await patchProfile(sellerToken, { description: "Fixed" });
+  assert.equal(res.body.profile.verificationStatus, "pending");
+  assert.equal(res.body.profile.rejectionReason, null);
+  const listed = await api("GET", "/admin/sellers", { token });
+  assert.ok(listed.body.profiles.some((p) => p.id === id));
+});
+
+test("a suspended profile can't be edited", async () => {
+  const { sellerToken } = await approvedSeller();
+  await db.query("UPDATE seller_profiles SET verification_status = 'suspended'");
+  const res = await patchProfile(sellerToken, { description: "Hi" });
+  assert.equal(res.status, 409);
+  assert.equal(res.body.code, "PROFILE_SUSPENDED");
+});
+
+test("editing refuses a taken store URL, someone else's address and a missing profile", async () => {
+  const one = await pendingProfile("one@example.com", "store-one");
+  const two = await pendingProfile("two@example.com", "store-two");
+  assert.equal((await patchProfile(two.sellerToken, { storeSlug: "store-one" })).status, 409);
+
+  const owner = await api("GET", "/auth/me", { token: one.sellerToken });
+  const { rows } = await db.query(
+    `INSERT INTO addresses (user_id, full_name, phone, address_line1, city, state, postal_code, country_code)
+     VALUES ($1, 'A', '+919876543213', 'L1', 'C', 'S', '1', 'IN') RETURNING id`,
+    [owner.body.user.id]
+  );
+  const res = await patchProfile(two.sellerToken, { pickupAddressId: rows[0].id });
+  assert.equal(res.body.code, "INVALID_PICKUP_ADDRESS");
+  assert.equal((await patchProfile(one.sellerToken, { pickupAddressId: rows[0].id })).status, 200);
+
+  const noProfile = await signup({ email: "new@example.com", role: "seller" });
+  assert.equal((await patchProfile(noProfile.body.accessToken, { storeName: "X" })).status, 404);
+});
+
 test("CORS only allows the frontend origin, with credentials", async () => {
   const res = await api("GET", "/health");
   assert.equal(res.headers.get("access-control-allow-origin"), "http://localhost:3000");
