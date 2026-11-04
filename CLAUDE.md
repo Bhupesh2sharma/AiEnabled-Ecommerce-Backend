@@ -28,10 +28,10 @@ src/
   routes/          URL -> controller; index.js combines all routers
   controllers/     request/response handling, calls models
   models/          SQL queries only (via config/db query())
-  middlewares/     notFound, errorHandler, validate (zod), auth (authenticate, authorize), rateLimit
+  middlewares/     notFound, errorHandler, validate (zod), auth (authenticate, authorize), rateLimit, sellerProfile
   validators/      zod request schemas
   services/        talks to external services: email/, sms/ (swappable drivers), google, OTP issuing
-  utils/           ApiError, asyncHandler, password, token, otp, session, slug, sqlUpdate
+  utils/           ApiError, asyncHandler, password, token, otp, session, slug, sqlUpdate, gst, variantOptions
   db/migrations/   timestamped .sql migration files
 scripts/migrate.js migration runner
 scripts/create-admin.js  creates the first admin

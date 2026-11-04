@@ -5,6 +5,7 @@ const env = require("../config/env");
 const PG_UNIQUE_VIOLATION = "23505";
 // Postgres 18 raises 23001 for ON DELETE RESTRICT, and 23503 for other foreign key failures.
 const PG_REFERENCE_VIOLATIONS = new Set(["23001", "23503"]);
+const PG_CHECK_VIOLATION = "23514";
 
 // Friendly messages for duplicates caught by the database, keyed by constraint name.
 const UNIQUE_MESSAGES = {
@@ -19,6 +20,8 @@ const UNIQUE_MESSAGES = {
   brands_slug_unique: "This brand URL is already taken",
   variant_options_code_unique: "A variant option with this code already exists",
   variant_option_values_code_unique: "This option already has a value with this code",
+  product_variants_sku_unique: "You already have a variant with this SKU",
+  product_variants_options_unique: "This product already has a variant with these options",
 };
 
 // Express treats a middleware with four parameters as the error handler.
@@ -36,6 +39,11 @@ function errorHandler(err, req, res, next) {
       message: "This record is linked to other data, so the change can't be made",
       code: "CONFLICT",
     });
+  }
+
+  // A backstop: the validators should catch these first, with more helpful messages.
+  if (err.code === PG_CHECK_VIOLATION) {
+    return res.status(400).json({ message: "This data breaks a rule, so it can't be saved", code: "VALIDATION_ERROR" });
   }
 
   const status = err.status || 500;

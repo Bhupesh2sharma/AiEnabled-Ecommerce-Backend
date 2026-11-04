@@ -129,6 +129,21 @@
       "key": "brandId",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "productId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "variantId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sku",
+      "value": "SAMPLE-SKU-1",
+      "type": "string"
     }
   ],
   "item": [
@@ -994,6 +1009,263 @@
                 }
               }
             }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Seller Products",
+      "description": "A seller's products and variants. Needs a logged-in seller with a store profile, and a category with no sub-categories in `categoryId`. Other sellers' records return 404. Run in order: creating saves the ids that later requests use.",
+      "item": [
+        {
+          "name": "Create Product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/seller/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seller",
+                "products"
+              ]
+            },
+            "description": "Creates a draft; variants are added separately. The category must be active with no sub-categories. `brandName` reuses a matching brand or creates one. Legal details can wait until publishing. Saves `productId`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"categoryId\": \"{{categoryId}}\",\n  \"title\": \"Men's Cotton T-Shirt\",\n  \"brandName\": \"{{brandName}}\",\n  \"description\": \"Soft cotton t-shirt\",\n  \"highlights\": [\n    \"100% cotton\",\n    \"Machine wash\"\n  ],\n  \"specifications\": {\n    \"Material\": \"Cotton\"\n  },\n  \"hsnCode\": \"61091000\",\n  \"genericName\": \"Men's T-Shirt\",\n  \"countryOfOrigin\": \"IN\",\n  \"manufacturerName\": \"Sample Mills Pvt Ltd\",\n  \"manufacturerAddress\": \"12 Mill Road, Tiruppur, Tamil Nadu 641601\",\n  \"isReturnable\": true,\n  \"returnWindowDays\": 7,\n  \"warrantySummary\": \"No warranty\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  pm.collectionVariables.set('productId', pm.response.json().product.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List My Products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/seller/products?page=1&limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seller",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Newest first, any status. `status` is draft, active or paused. `limit` is at most 100."
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Product",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/seller/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seller",
+                "products",
+                "{{productId}}"
+              ]
+            },
+            "description": "One of my products, with its variants."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Product",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/seller/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seller",
+                "products",
+                "{{productId}}"
+              ]
+            },
+            "description": "Send only the fields to change; `null` clears an optional field. `status` and the URL can't be set. Changing `categoryId` needs its variants to fit (409 `VARIANTS_DONT_FIT_CATEGORY`). A published product can't lose its legal details.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Men's Premium Cotton T-Shirt\",\n  \"warrantySummary\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Variant",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/seller/products/{{productId}}/variants",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seller",
+                "products",
+                "{{productId}}",
+                "variants"
+              ]
+            },
+            "description": "`options` must match the category; see Get Category Variant Options. Use an empty object if the category has none. Prices are in rupees and `sellingPrice` includes GST and can't exceed `mrp`. `gstRate` must be 0 with no GSTIN, and is required with one. Stock starts at 0. Saves `variantId`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"{{sku}}\",\n  \"options\": {},\n  \"mrp\": 999,\n  \"sellingPrice\": 499,\n  \"gstRate\": 0,\n  \"netQuantity\": \"1 N\",\n  \"weightGrams\": 250,\n  \"lengthMm\": 300,\n  \"widthMm\": 250,\n  \"heightMm\": 30\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  pm.collectionVariables.set('variantId', pm.response.json().variant.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Variant",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/seller/variants/{{variantId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seller",
+                "variants",
+                "{{variantId}}"
+              ]
+            },
+            "description": "Send only the fields to change. Lower `sellingPrice` to give a discount. Stock can't be set here.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sellingPrice\": 449,\n  \"isActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Variant",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/seller/variants/{{variantId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seller",
+                "variants",
+                "{{variantId}}"
+              ]
+            },
+            "description": "Soft delete; frees its SKU and options. 409 `LAST_VARIANT` if a published product would have none. Returns 204."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Product",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/seller/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seller",
+                "products",
+                "{{productId}}"
+              ]
+            },
+            "description": "Soft delete, along with its variants. Returns 204."
           },
           "response": []
         }

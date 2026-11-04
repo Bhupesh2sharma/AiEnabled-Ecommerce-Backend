@@ -1,6 +1,6 @@
 # Catalog
 
-How categories, brands and variant options work. The code is the source of truth.
+How categories, brands, variant options and sellers' products work. The code is the source of truth.
 
 > Keep this file in sync with the code. Any change to catalog behaviour, endpoints, limits or error codes
 > must update this document in the same change.
@@ -8,7 +8,7 @@ How categories, brands and variant options work. The code is the source of truth
 **Related:** [DATABASE.md](DATABASE.md) (tables), [AUTH.md](AUTH.md) (login and roles) and
 [the Postman collection](../postman/Ecommerce-API.postman_collection.json) (runnable requests).
 
-**Built so far:** categories, brands and variant options. Seller products, images and public product browsing aren't built yet.
+**Built so far:** categories, brands, variant options, and sellers creating, editing and deleting products and variants. Stock changes, images, publishing and public product browsing aren't built yet, so every new product stays a draft for now.
 
 ## Categories
 
@@ -22,7 +22,7 @@ for example Electronics → Mobiles → Smartphones.
 - **Deleting:** soft delete, refused while it has sub-categories or products. Deactivate it instead to hide it and keep its data.
 - **Inactive:** hides the category and everything below it from customers. Admins still see it.
 
-Only one change to the tree runs at a time, so two admins moving categories at once can't create a loop.
+Only one change to the tree runs at a time, so two admins moving categories at once can't create a loop. Creating a product takes the same lock in shared mode, so a product and a new sub-category can't land on one category at the same moment.
 
 ## Variant options
 
@@ -55,6 +55,34 @@ flowchart LR
 - Deleting is refused while live products use the brand; deactivate it instead.
 - `GET /brands?q=ni` finds names starting with "ni", ignoring case. `%` and `_` are ordinary characters.
 
+## Products and variants
+
+A product is the listing; a variant is what's actually bought, with its own price and stock.
+
+- **Who can use it:** sellers with a store profile. Sellers awaiting approval, or rejected, can prepare drafts. Suspended sellers can only read. Other sellers' products return 404.
+- **Category:** must be active, with no sub-categories. A product can move category only if its variants fit the new one.
+- **Brand:** send `brandName`. A match, ignoring case, is reused; otherwise a new brand is created. An inactive brand is refused. `null` removes it.
+- **URL:** made from the title with a random ending, and it stays the same when the title changes.
+- **Drafts can be incomplete:** a published product can't lose its generic name, country of origin or manufacturer details.
+
+### Variants
+
+| Rule | Detail |
+|---|---|
+| Options | Must match the category: required ones present, no others, and allowed values only. `"M"` is stored as the code `m` |
+| Custom values | Only where the option allows it, such as colour. "Midnight Blue" is stored as `midnight-blue`, with the label kept in `optionLabels`. Needs English letters or numbers |
+| Removed values | A variant keeps a value an admin removed until its options change, but a new variant can't choose it |
+| No options | A category with no options allows one variant per product, with empty `options` |
+| Prices | Up to 2 decimals, with `sellingPrice` at most `mrp`. Returned as strings such as `"499.50"`, because decimals can't be held exactly as numbers |
+| Discounts | Sellers lower `sellingPrice`. The percentage shown is worked out from `mrp` and `sellingPrice`, never stored |
+| GST | One of 0, 0.25, 1.5, 3, 5, 18 or 40. A seller with no GSTIN must use 0. A seller with one must state it when creating a variant |
+| SKU | Unique per seller, ignoring case. Two sellers can share one |
+| Stock | Starts at 0 and can't be set here; it gets its own endpoint with a history |
+| Limit | At most 100 variants per product |
+| Deleting | A published product must keep at least one variant. Deleting frees the SKU and options for reuse |
+
+`minPrice` on the product follows the lowest price among its live, active variants, and is `null` when there are none.
+
 ## Endpoints
 
 All paths start with `/api`.
@@ -80,8 +108,16 @@ All paths start with `/api`.
 | `POST /admin/variant-options/:id/values` | Admin | Add a value |
 | `PATCH /admin/variant-options/:id/values/:valueId` | Admin | Edit a value's label, colour or order |
 | `DELETE /admin/variant-options/:id/values/:valueId` | Admin | Soft delete a value |
+| `POST /seller/products` | Seller | Create a draft |
+| `GET /seller/products` | Seller | My products, newest first; `status`, `page`, `limit` |
+| `GET /seller/products/:id` | Seller | One of my products, with its variants |
+| `PATCH /seller/products/:id` | Seller | Edit a product; `null` clears an optional field |
+| `DELETE /seller/products/:id` | Seller | Soft delete a product and its variants |
+| `POST /seller/products/:id/variants` | Seller | Add a variant |
+| `PATCH /seller/variants/:id` | Seller | Edit a variant |
+| `DELETE /seller/variants/:id` | Seller | Soft delete a variant |
 
-Request bodies are in `src/validators/catalog.validator.js` and the Postman collection. Image and logo fields hold an `http` or `https` URL for now; uploads arrive with image storage.
+Request bodies are in `src/validators/catalog.validator.js`, `src/validators/product.validator.js` and the Postman collection. Image and logo fields hold an `http` or `https` URL for now; uploads arrive with image storage.
 
 ## Rate limits
 
@@ -98,12 +134,24 @@ Errors use the format in [AUTH.md](AUTH.md).
 | 400 | `INVALID_PARENT` | Parent doesn't exist, or the move would put a category under itself |
 | 400 | `CATEGORY_TOO_DEEP` | The result would go past 3 levels |
 | 400 | `INVALID_OPTION` | An assigned option doesn't exist |
-| 404 | `NOT_FOUND` | The category, brand, option or value doesn't exist |
-| 409 | `CONFLICT` | A name, slug or code is taken, or a record is linked to other data |
+| 400 | `INVALID_CATEGORY` | A product's category doesn't exist or is inactive |
+| 400 | `CATEGORY_NOT_LEAF` | A product's category has sub-categories |
+| 400 | `BRAND_INACTIVE` | The named brand has been deactivated |
+| 400 | `LEGAL_DETAILS_REQUIRED` | A published product can't lose these details |
+| 400 | `INVALID_VARIANT_OPTIONS` | Options don't match the category; see `details` |
+| 400 | `PRICE_ABOVE_MRP` | Selling price is above MRP |
+| 400 | `GST_NOT_ALLOWED` | A seller with no GSTIN must use a GST rate of 0 |
+| 400 | `VARIANT_LIMIT_REACHED` | The product already has 100 variants |
+| 403 | `SELLER_PROFILE_REQUIRED` | Create a store profile first |
+| 403 | `PROFILE_SUSPENDED` | A suspended seller can only read |
+| 404 | `NOT_FOUND` | The record doesn't exist, or belongs to another seller |
+| 409 | `CONFLICT` | A name, slug, code, SKU or variant's options are taken, or a record is linked to other data |
 | 409 | `CATEGORY_HAS_CHILDREN` | Move or delete its sub-categories first |
 | 409 | `CATEGORY_HAS_PRODUCTS` | Can't delete it or give it sub-categories |
 | 409 | `BRAND_IN_USE` | Products use this brand |
 | 409 | `OPTION_IN_USE` | A category uses this option |
+| 409 | `VARIANTS_DONT_FIT_CATEGORY` | Edit or remove these variants before moving the product |
+| 409 | `LAST_VARIANT` | A published product must keep a variant |
 
 ## Where the code is
 
@@ -114,5 +162,9 @@ Errors use the format in [AUTH.md](AUTH.md).
 | `src/controllers/brand.controller.js`, `variantOption.controller.js` | Brands, options and values |
 | `src/models/category.model.js` | SQL, including inherited options |
 | `src/models/brand.model.js`, `variantOption.model.js` | SQL |
-| `src/validators/catalog.validator.js` | Request rules |
-| `tests/catalog.test.js` | API tests |
+| `src/controllers/product.controller.js` | Sellers' products and variants |
+| `src/models/product.model.js`, `productVariant.model.js` | SQL |
+| `src/middlewares/sellerProfile.js` | Requires a store, and refuses suspended sellers' changes |
+| `src/utils/variantOptions.js`, `gst.js` | Option checks and allowed GST rates |
+| `src/validators/catalog.validator.js`, `product.validator.js` | Request rules |
+| `tests/catalog.test.js`, `tests/products.test.js` | API tests |

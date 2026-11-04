@@ -42,6 +42,11 @@ async function lockTree(client) {
   await client.query("SELECT pg_advisory_xact_lock(hashtextextended('categories_tree', 0))");
 }
 
+// The same lock in shared mode, for creating products: they can run together, but not during a tree change.
+async function lockTreeShared(client) {
+  await client.query("SELECT pg_advisory_xact_lock_shared(hashtextextended('categories_tree', 0))");
+}
+
 async function listAll() {
   const { rows } = await db.query("SELECT * FROM categories WHERE deleted_at IS NULL ORDER BY sort_order, name");
   return rows;
@@ -129,8 +134,8 @@ async function hasProducts(id, client = db) {
 }
 
 // Customers can see a category only if it and every parent above it are active.
-async function isVisible(id) {
-  const { rows } = await db.query(
+async function isVisible(id, client = db) {
+  const { rows } = await client.query(
     `WITH RECURSIVE chain AS (
        SELECT id, parent_id, is_active FROM categories WHERE id = $1 AND deleted_at IS NULL
        UNION ALL
@@ -200,6 +205,7 @@ module.exports = {
   toPublicCategory,
   toAdminCategory,
   lockTree,
+  lockTreeShared,
   listAll,
   findById,
   getDepth,

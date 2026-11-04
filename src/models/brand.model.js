@@ -1,6 +1,8 @@
 // SQL for brands.
 
+const crypto = require("crypto");
 const db = require("../config/db");
+const slugify = require("../utils/slug");
 const buildAssignments = require("../utils/sqlUpdate");
 
 const COLUMNS = { name: "name", slug: "slug", logoUrl: "logo_url", isActive: "is_active" };
@@ -46,8 +48,34 @@ async function update(id, fields) {
   return rows[0] ?? null;
 }
 
-// Refuses in one statement if the brand has live products, so a product added at the same moment can't slip through.
-// Returns "deleted", "in_use" or "not_found".
+// Finds a brand by name, ignoring case, or creates it. Safe if two sellers add the same new brand at once.
+async function findOrCreate(name, client) {
+  const find = async () => {
+    const { rows } = await client.query("SELECT * FROM brands WHERE LOWER(name) = LOWER($1) AND deleted_at IS NULL", [
+      name,
+    ]);
+    return rows[0] ?? null;
+  };
+
+  const existing = await find();
+  if (existing) return existing;
+
+  const insert = (slug) =>
+    client.query("INSERT INTO brands (name, slug) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING *", [name, slug]);
+
+  const base = slugify(name) || "brand";
+  const { rows } = await insert(base);
+  if (rows[0]) return rows[0];
+
+  // Nothing was added, so either another seller added this name just now, or another
+  // brand has the same URL, such as "Nike!" and "Nike".
+  const added = await find();
+  if (added) return added;
+  const retried = await insert(`${base}-${crypto.randomBytes(3).toString("hex")}`);
+  return retried.rows[0] ?? find();
+}
+
+// Refuses if the brand has live products. Returns "deleted", "in_use" or "not_found".
 async function softDelete(id) {
   const { rows } = await db.query(
     `WITH target AS (SELECT id FROM brands WHERE id = $1 AND deleted_at IS NULL FOR UPDATE),
@@ -65,4 +93,4 @@ async function softDelete(id) {
   return removed ? "deleted" : inUse ? "in_use" : "not_found";
 }
 
-module.exports = { toPublicBrand, toAdminBrand, list, create, update, softDelete };
+module.exports = { toPublicBrand, toAdminBrand, list, create, findOrCreate, update, softDelete };
