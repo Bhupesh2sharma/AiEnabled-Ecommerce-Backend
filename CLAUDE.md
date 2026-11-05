@@ -11,6 +11,7 @@ npm run migrate                     # apply pending migrations
 npm run migrate:status              # list applied / pending migrations
 npm run migrate:create <name>       # create src/db/migrations/<timestamp>_<name>.sql
 npm run create-admin                # create the first admin
+npm run seed:catalog                # add sample categories and options (development only; safe to re-run)
 npm test                            # API tests; needs TEST_DATABASE_URL, a migrated database whose data it WIPES
 ```
 
@@ -35,6 +36,7 @@ src/
   db/migrations/   timestamped .sql migration files
 scripts/migrate.js migration runner
 scripts/create-admin.js  creates the first admin
+scripts/seed-catalog.js  adds sample categories and options for development
 tests/             API tests (node:test)
 postman/          Postman collection (keep in sync with the API)
 docs/DATABASE.md   database schema documentation

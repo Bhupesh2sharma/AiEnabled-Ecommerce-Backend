@@ -8,7 +8,7 @@ How categories, brands, variant options and sellers' products work. The code is 
 **Related:** [DATABASE.md](DATABASE.md) (tables), [AUTH.md](AUTH.md) (login and roles) and
 [the Postman collection](../postman/Ecommerce-API.postman_collection.json) (runnable requests).
 
-**Built so far:** categories, brands, variant options, sellers creating, editing and deleting products and variants, stock changes, image uploads, publishing, public browsing and search, and admin moderation.
+**Built so far:** categories, brands, variant options, sellers creating, editing and deleting products and variants, stock changes, image uploads, publishing, public browsing and search, admin moderation, and sample data for development.
 
 ## Categories
 
@@ -241,6 +241,17 @@ Publishing has no review of each product, so admins can act afterwards: `POST /a
 
 `GET /admin/products` lists every seller's products in any status, except deleted ones, newest first, with the store's name and approval status. Filters: `status`, `blocked`, `sellerId`, `q` (part of a title, or an exact slug), `page`, `limit` (at most 100, default 50).
 
+## Sample data
+
+`npm run seed:catalog` adds sample categories and options to a development database, so sellers' forms and customer filters have something to show. It adds no products, sellers or brands.
+
+- **Categories:** Clothing, Footwear, Electronics, Home & Kitchen and Books, with sub-categories up to 3 levels. No food, medicines or similar.
+- **Options:** Size, Shoe Size (UK), RAM and Storage are fixed lists. Colour allows custom values.
+- **HSN codes:** the few included are only suggestions for sellers. Have the CA confirm them.
+- **Running it again:** only adds what's missing, and leaves existing categories and options as they are, including their values and assigned options. Something deleted counts as missing and comes back, except a single option value, which stays deleted while its option exists.
+- **A category with products:** can't have sub-categories, so its sample children are skipped with a warning.
+- **Production:** refused. Admins create the real categories through the API.
+
 ## Endpoints
 
 All paths start with `/api`.
@@ -357,9 +368,10 @@ Errors use the format in [AUTH.md](AUTH.md).
 | `src/controllers/image.controller.js`, `src/models/productImage.model.js` | Uploads and product images |
 | `src/controllers/browse.controller.js`, `src/models/browse.model.js` | Public browsing, search and the visibility rules |
 | `src/controllers/adminProduct.controller.js`, `src/models/adminProduct.model.js` | Admin product list, block and unblock |
+| `scripts/seed-catalog.js` | Sample categories and options |
 | `src/services/storage/` | R2 and S3 drivers |
 | `src/utils/imageFile.js` | Allowed image types and the file checks |
 | `src/utils/variantOptions.js`, `gst.js` | Option checks and allowed GST rates |
 | `src/validators/catalog.validator.js`, `product.validator.js` | Request rules |
-| `tests/catalog.test.js`, `products.test.js`, `images.test.js`, `publish.test.js`, `browse.test.js`, `moderation.test.js` | API tests |
+| `tests/catalog.test.js`, `products.test.js`, `images.test.js`, `publish.test.js`, `browse.test.js`, `moderation.test.js`, `seed.test.js` | API tests |
 | `tests/storage.test.js` | The real storage code. Its upload tests run against an S3-compatible server when `TEST_S3_ENDPOINT`, `TEST_S3_ACCESS_KEY`, `TEST_S3_SECRET_KEY` and `TEST_S3_BUCKET` are set, and are skipped otherwise |
