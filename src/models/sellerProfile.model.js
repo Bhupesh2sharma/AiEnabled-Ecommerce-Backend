@@ -64,7 +64,7 @@ async function create(userId, fields) {
 // A pickup address must belong to the seller creating the profile.
 async function userOwnsAddress(userId, addressId) {
   const { rowCount } = await db.query(
-    "SELECT 1 FROM addresses WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL",
+    "SELECT 1 FROM addresses WHERE id = $1 AND user_id = $2",
     [addressId, userId]
   );
   return rowCount === 1;

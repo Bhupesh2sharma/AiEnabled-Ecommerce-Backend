@@ -576,8 +576,8 @@ test("seller profile rejects a taken slug, a bad slug and someone else's address
   assert.equal((await create({ ...storeBody, storeSlug: "Bad Slug" })).status, 400);
 
   const { rows } = await db.query(
-    `INSERT INTO addresses (user_id, full_name, phone, address_line1, city, state, postal_code, country_code)
-     VALUES ($1, 'A', '+919876543213', 'L1', 'C', 'S', '1', 'IN') RETURNING id`,
+    `INSERT INTO addresses (user_id, full_name, phone, address_line1, city, state, state_code, postal_code, country_code)
+     VALUES ($1, 'A', '+919876543213', 'L1', 'C', 'Maharashtra', '27', '411001', 'IN') RETURNING id`,
     [one.body.user.id]
   );
   const res = await create({ ...storeBody, storeSlug: "two", pickupAddressId: rows[0].id });
@@ -1031,8 +1031,8 @@ test("editing refuses a taken store URL, someone else's address and a missing pr
 
   const owner = await api("GET", "/auth/me", { token: one.sellerToken });
   const { rows } = await db.query(
-    `INSERT INTO addresses (user_id, full_name, phone, address_line1, city, state, postal_code, country_code)
-     VALUES ($1, 'A', '+919876543213', 'L1', 'C', 'S', '1', 'IN') RETURNING id`,
+    `INSERT INTO addresses (user_id, full_name, phone, address_line1, city, state, state_code, postal_code, country_code)
+     VALUES ($1, 'A', '+919876543213', 'L1', 'C', 'Maharashtra', '27', '411001', 'IN') RETURNING id`,
     [owner.body.user.id]
   );
   const res = await patchProfile(two.sellerToken, { pickupAddressId: rows[0].id });

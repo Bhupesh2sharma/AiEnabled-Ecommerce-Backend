@@ -173,9 +173,9 @@ One row per login session. Rotated on every refresh.
 ## Customer
 
 ### `addresses`
-Migration: `20261101045705_create_addresses.sql`
+Migrations: `20261101045705_create_addresses.sql`, `20261105054731_addresses_for_india.sql`
 
-A user's address book. Used for customer shipping/billing and seller pickup.
+A user's address book. Used for customer shipping/billing and seller pickup. India only for now.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -185,15 +185,18 @@ A user's address book. Used for customer shipping/billing and seller pickup.
 | `full_name` / `phone` | VARCHAR | recipient; may differ from account holder. Phone required, E.164 |
 | `address_line1` | VARCHAR(255) | required |
 | `address_line2`, `landmark` | VARCHAR(255) | optional |
-| `city`, `state`, `postal_code` | VARCHAR | required |
-| `country_code` | CHAR(2) | ISO 3166-1 alpha-2 (`IN`, `US`), required |
+| `city`, `postal_code` | VARCHAR | required. An Indian PIN code is 6 digits, not starting with 0 (CHECK) |
+| `state_code` | CHAR(2) | GST state code, e.g. `27`, required. Orders compare this to choose CGST + SGST or IGST |
+| `state` | VARCHAR(100) | state name, filled in by the app from `state_code`, never sent by users |
+| `country_code` | CHAR(2) | ISO 3166-1 alpha-2, default `IN` |
 | `is_default_shipping` | BOOLEAN | at most one per user (partial unique index) |
 | `is_default_billing` | BOOLEAN | at most one per user (partial unique index) |
-| `created_at` / `updated_at` / `deleted_at` | TIMESTAMPTZ | standard |
+| `created_at` / `updated_at` | TIMESTAMPTZ | standard. Hard deleted, unlike most tables, so unused personal data isn't kept |
 
 **Rules**
-- Orders must **copy** the address into the order when placed, not just reference `addresses.id`,
-  so editing/deleting an address never changes a past order.
+- Orders must **copy** the address, including `state_code`, into the order when placed, not just reference
+  `addresses.id`, so editing or deleting an address never changes a past order.
+- `state_code` must come from `src/utils/indianStates.js`, which also supplies `state`.
 - Switching the default: unset the old default before setting the new one (same transaction),
   otherwise the unique index rejects it.
 
