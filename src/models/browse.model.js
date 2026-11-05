@@ -1,5 +1,6 @@
 // SQL for what customers see. Every read goes through VISIBLE_FROM and VISIBLE_WHERE, so suspending a seller or
-// hiding a category takes effect at once, without changing any products.
+// hiding a category takes effect at once, without changing any products. The cart uses them too, so the
+// two can't disagree about what's on sale.
 
 const db = require("../config/db");
 
@@ -202,4 +203,14 @@ async function findOptionLabels(optionCodes) {
   return rows;
 }
 
-module.exports = { list, findBySlug, listVariants, listImages, findOptionLabels };
+module.exports = {
+  VISIBLE_CATEGORIES,
+  VISIBLE_FROM,
+  VISIBLE_WHERE,
+  DISCOUNT,
+  list,
+  findBySlug,
+  listVariants,
+  listImages,
+  findOptionLabels,
+};

@@ -1130,6 +1130,63 @@
       ]
     },
     {
+      "name": "Cart",
+      "description": "A customer's cart. Uses `accessToken`, so log in as a customer first. Sellers and admins get 403. Prices and stock are read live on every view.",
+      "item": [
+        {
+          "name": "Get Cart",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/cart",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "cart"
+              ]
+            },
+            "description": "The cart, with live details and totals. Each item's `status` is `available`, `not_enough_stock`, `out_of_stock` or `unavailable`, and totals count only `available` items. `canCheckout` is true only if all items are `available`."
+          },
+          "response": []
+        },
+        {
+          "name": "Add to Cart",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/cart/items",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "cart",
+                "items"
+              ]
+            },
+            "description": "Set `variantId` to a variant on sale, from Get Product. `quantity` defaults to 1, and adding one already in the cart adds to it. Returns the whole cart. 409 `PRODUCT_UNAVAILABLE` if it isn't on sale or doesn't exist, `OUT_OF_STOCK`, `NOT_ENOUGH_STOCK` or `QUANTITY_LIMIT_REACHED` with `details[0].maxQuantity`, or `CART_LIMIT_REACHED` at 50 different items.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"variantId\": \"{{variantId}}\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Seller",
       "description": "Create a store profile, which requires a seller account with both email and phone verified, then view or edit it.",
       "item": [

@@ -8,7 +8,7 @@ require("./testEnv");
 
 const app = require("../src/app");
 const db = require("../src/config/db");
-const AddressModel = require("../src/models/address.model");
+const UserModel = require("../src/models/user.model");
 const { INDIAN_STATES } = require("../src/utils/indianStates");
 const { signAccessToken } = require("../src/utils/token");
 
@@ -462,7 +462,7 @@ test("a default survives deleting several addresses at once", async () => {
 
 test("the address lock doesn't block rows that point at the user, such as a login's session", async () => {
   await db.transaction(async (client) => {
-    await AddressModel.lockUser(userId, client);
+    await UserModel.lockForChange(userId, client);
     // Run from another connection while the lock is held. A stronger lock would make this wait and time out.
     await db.transaction(async (other) => {
       await other.query("SET LOCAL lock_timeout = '500ms'");

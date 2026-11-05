@@ -151,6 +151,13 @@ async function adminExists() {
   return rows[0].exists;
 }
 
+// Holds the user until the transaction ends, so limits on what a user owns, such as addresses and cart
+// items, stay correct when requests arrive together. NO KEY UPDATE, because a stronger lock would block
+// the user's logins, which insert rows pointing at this one.
+async function lockForChange(userId, client) {
+  await client.query("SELECT 1 FROM users WHERE id = $1 FOR NO KEY UPDATE", [userId]);
+}
+
 module.exports = {
   toPublicUser,
   findById,
@@ -165,4 +172,5 @@ module.exports = {
   setVerifiedPhone,
   setVerifiedEmail,
   adminExists,
+  lockForChange,
 };

@@ -4,6 +4,7 @@ const db = require("../config/db");
 const AddressModel = require("../models/address.model");
 const ProductModel = require("../models/product.model");
 const SellerProfileModel = require("../models/sellerProfile.model");
+const UserModel = require("../models/user.model");
 const ApiError = require("../utils/ApiError");
 const { assertPickupMatchesGstin } = require("../utils/gst");
 
@@ -68,7 +69,7 @@ async function createProfile(req, res) {
 
   const profile = await db.transaction(async (client) => {
     // The address can't be deleted or moved to another state while this lock is held.
-    await AddressModel.lockUser(req.user.id, client);
+    await UserModel.lockForChange(req.user.id, client);
     if (req.body.pickupAddressId) {
       const address = await findOwnPickupAddress(req.user.id, req.body.pickupAddressId, client);
       if (req.body.taxId) assertPickupMatchesGstin(req.body.taxId, address.state_code);
@@ -90,7 +91,7 @@ async function getProfile(req, res) {
 async function updateProfile(req, res) {
   const { updated, productsUnpublished } = await db.transaction(async (client) => {
     // Always the user, then the profile, then products: the order address changes and publishing use.
-    await AddressModel.lockUser(req.user.id, client);
+    await UserModel.lockForChange(req.user.id, client);
     // The lock stops an admin's decision landing between this check and the update.
     const profile = await SellerProfileModel.findByUserIdForUpdate(req.user.id, client);
     if (!profile) throw profileNotFound();

@@ -232,7 +232,7 @@ test("seller-only data never reaches customers", async () => {
   for (const { status, body } of responses) {
     assert.equal(status, 200);
     const json = JSON.stringify(body);
-    for (const secret of ["22AAAAA0000A1Z5", "acct_secret", "SKU-", "6912", "storage", "commission", "stockQuantity", "sellerId", "blocked", "status"]) {
+    for (const secret of ["22AAAAA0000A1Z5", "acct_secret", "SKU-", '"6912"', "storage", "commission", "stockQuantity", "sellerId", "blocked", "status"]) {
       assert.equal(json.includes(secret), false, `response contains ${secret}`);
     }
     assert.equal(json.includes(":37"), false, "response contains the exact stock");

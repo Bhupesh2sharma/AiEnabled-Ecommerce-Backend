@@ -3,6 +3,7 @@
 const db = require("../config/db");
 const AddressModel = require("../models/address.model");
 const SellerProfileModel = require("../models/sellerProfile.model");
+const UserModel = require("../models/user.model");
 const ApiError = require("../utils/ApiError");
 const { assertPickupMatchesGstin } = require("../utils/gst");
 const { INDIAN_STATES } = require("../utils/indianStates");
@@ -48,7 +49,7 @@ async function getOne(req, res) {
 // POST /api/addresses: a user's first address becomes both defaults.
 async function create(req, res) {
   const address = await db.transaction(async (client) => {
-    await AddressModel.lockUser(req.user.id, client);
+    await UserModel.lockForChange(req.user.id, client);
 
     const count = await AddressModel.countForUser(req.user.id, client);
     if (count >= MAX_ADDRESSES) {
@@ -80,7 +81,7 @@ async function create(req, res) {
 // choosing another address is what turns it off, so a user with addresses always has one.
 async function update(req, res) {
   const address = await db.transaction(async (client) => {
-    await AddressModel.lockUser(req.user.id, client);
+    await UserModel.lockForChange(req.user.id, client);
     if (!(await AddressModel.findOwned(req.params.id, req.user.id, client))) throw notFound();
 
     const store = await SellerProfileModel.findByPickupAddress(req.params.id, client);
@@ -98,7 +99,7 @@ async function update(req, res) {
 // DELETE /api/addresses/:id: permanent. Orders will keep their own copy of the address.
 async function remove(req, res) {
   await db.transaction(async (client) => {
-    await AddressModel.lockUser(req.user.id, client);
+    await UserModel.lockForChange(req.user.id, client);
     const address = await AddressModel.findOwned(req.params.id, req.user.id, client);
     if (!address) throw notFound();
 

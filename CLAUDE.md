@@ -43,6 +43,7 @@ docs/DATABASE.md   database schema documentation
 docs/AUTH.md       how authentication works
 docs/CATALOG.md    how the catalog works
 docs/ADDRESSES.md  how addresses work
+docs/CART.md       how the cart works
 plans/             feature plans (e.g. authentication-plan.md)
 ```
 
@@ -81,6 +82,11 @@ limits or error codes must update it in the same change.
 ## Addresses: read and maintain `docs/ADDRESSES.md`
 
 `docs/ADDRESSES.md` describes how addresses work. Any change to address behaviour, endpoints, limits or error codes
+must update it in the same change.
+
+## Cart: read and maintain `docs/CART.md`
+
+`docs/CART.md` describes how the cart works. Any change to cart behaviour, endpoints, limits or error codes
 must update it in the same change.
 
 ## Postman collection

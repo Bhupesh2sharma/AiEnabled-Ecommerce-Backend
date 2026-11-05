@@ -42,13 +42,6 @@ function toAddress(address) {
   };
 }
 
-// Holds the user until the transaction ends, so the limit and the defaults stay correct when requests
-// arrive together. NO KEY UPDATE, because a stronger lock would block the user's logins, which insert
-// rows pointing at this one.
-async function lockUser(userId, client) {
-  await client.query("SELECT 1 FROM users WHERE id = $1 FOR NO KEY UPDATE", [userId]);
-}
-
 async function listForUser(userId) {
   const { rows } = await db.query(
     `SELECT * FROM addresses WHERE user_id = $1
@@ -127,4 +120,4 @@ async function promoteNewest(userId, kind, client) {
   );
 }
 
-module.exports = { toAddress, lockUser, listForUser, countForUser, findOwned, listByIds, create, update, clearDefault, remove, promoteNewest };
+module.exports = { toAddress, listForUser, countForUser, findOwned, listByIds, create, update, clearDefault, remove, promoteNewest };
