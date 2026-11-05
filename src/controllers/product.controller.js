@@ -7,6 +7,7 @@ const CategoryModel = require("../models/category.model");
 const ProductImageModel = require("../models/productImage.model");
 const ProductModel = require("../models/product.model");
 const ProductVariantModel = require("../models/productVariant.model");
+const SellerProfileModel = require("../models/sellerProfile.model");
 const ApiError = require("../utils/ApiError");
 const slugify = require("../utils/slug");
 const normalizeOptions = require("../utils/variantOptions");
@@ -15,10 +16,19 @@ const MAX_VARIANTS_PER_PRODUCT = 100;
 
 // Non-draft products must keep these (the database also enforces this).
 const LEGAL_FIELDS = [
-  ["genericName", "generic_name"],
-  ["countryOfOrigin", "country_of_origin"],
-  ["manufacturerName", "manufacturer_name"],
-  ["manufacturerAddress", "manufacturer_address"],
+  ["genericName", "generic_name", "Enter the generic name, such as Men's T-Shirt"],
+  ["countryOfOrigin", "country_of_origin", "Enter the country of origin"],
+  ["manufacturerName", "manufacturer_name", "Enter the manufacturer's name"],
+  ["manufacturerAddress", "manufacturer_address", "Enter the manufacturer's address"],
+];
+
+// Every variant on sale needs these. Customers must see net quantity, and couriers charge on the rest.
+const VARIANT_PUBLISH_FIELDS = [
+  ["netQuantity", "net_quantity", "net quantity"],
+  ["weightGrams", "weight_grams", "weight"],
+  ["lengthMm", "length_mm", "length"],
+  ["widthMm", "width_mm", "width"],
+  ["heightMm", "height_mm", "height"],
 ];
 
 const productNotFound = () => new ApiError(404, "Product not found", { code: "NOT_FOUND" });
@@ -159,12 +169,13 @@ async function assertVariantsFitCategory(productId, categoryId, client) {
   }
 }
 
-function assertLegalDetailsKept(product, fields) {
+function assertLegalDetailsKept(product, fields, profile) {
   if (product.status === "draft") return;
-  const details = LEGAL_FIELDS.filter(([field]) => fields[field] === null).map(([field]) => ({
-    field,
-    message: "A published product must keep this detail",
-  }));
+  const required = LEGAL_FIELDS.map(([field]) => field);
+  if (profile.tax_id) required.push("hsnCode");
+  const details = required
+    .filter((field) => fields[field] === null)
+    .map((field) => ({ field, message: "A published product must keep this detail" }));
   if (details.length > 0) {
     throw new ApiError(400, "A published product must keep its legal details", {
       code: "LEGAL_DETAILS_REQUIRED",
@@ -179,7 +190,7 @@ async function updateProduct(req, res) {
     const current = await ProductModel.lockOwned(req.params.id, req.sellerProfile.id, client);
     if (!current) throw productNotFound();
 
-    assertLegalDetailsKept(current, req.body);
+    assertLegalDetailsKept(current, req.body, req.sellerProfile);
     assertReturnWindow(
       req.body.isReturnable ?? current.is_returnable,
       req.body.returnWindowDays === undefined ? current.return_window_days : req.body.returnWindowDays
@@ -209,6 +220,28 @@ async function deleteProduct(req, res) {
   res.status(204).end();
 }
 
+// What this variant still needs before it can be on sale. `fields` overrides the stored values.
+function missingVariantDetails(variant, fields = {}) {
+  return VARIANT_PUBLISH_FIELDS.filter(([field, column]) => {
+    const value = fields[field] === undefined ? variant[column] : fields[field];
+    return value === null || value === undefined;
+  });
+}
+
+// A published product can't gain, or re-activate, a variant that's missing details.
+function assertVariantComplete(product, variant, fields) {
+  if (product.status === "draft") return;
+  const isActive = fields.isActive ?? variant.is_active ?? true;
+  if (!isActive) return;
+  const missing = missingVariantDetails(variant, fields);
+  if (missing.length > 0) {
+    throw new ApiError(400, "A variant on a published product needs all its details", {
+      code: "VARIANT_DETAILS_REQUIRED",
+      details: missing.map(([field, , label]) => ({ field, message: `Enter the ${label}` })),
+    });
+  }
+}
+
 // POST /api/seller/products/:id/variants
 async function createVariant(req, res) {
   assertGstRate(req.sellerProfile, req.body.gstRate, { required: true });
@@ -223,6 +256,8 @@ async function createVariant(req, res) {
         code: "VARIANT_LIMIT_REACHED",
       });
     }
+
+    assertVariantComplete(product, {}, req.body);
 
     const allowed = await CategoryModel.getEffectiveOptions(product.category_id, client);
     const created = await ProductVariantModel.create(
@@ -256,6 +291,7 @@ async function updateVariant(req, res) {
     const { product, variant } = await withLockedVariant(req, client);
 
     assertPriceWithinMrp(req.body.sellingPrice ?? variant.selling_price, req.body.mrp ?? variant.mrp);
+    assertVariantComplete(product, variant, req.body);
 
     const fields = { ...req.body };
     if (req.body.options) {
@@ -295,7 +331,86 @@ async function deleteVariant(req, res) {
   res.status(204).end();
 }
 
+// Everything stopping a product going live, so a seller can fix it all at once rather than one error at a time.
+async function findPublishProblems(product, profile, client) {
+  const problems = [];
+  const add = (field, message) => problems.push({ field, message });
+
+  for (const [field, column, message] of LEGAL_FIELDS) {
+    if (!product[column]) add(field, message);
+  }
+  if (profile.tax_id && !product.hsn_code) add("hsnCode", "Enter the HSN code, because this store has a GSTIN");
+
+  await CategoryModel.lockTreeShared(client);
+  if (!(await CategoryModel.isVisible(product.category_id, client))) {
+    add("categoryId", "This category is no longer available. Choose another");
+  } else if (await CategoryModel.hasChildren(product.category_id, client)) {
+    add("categoryId", "This category now has sub-categories. Choose one of them");
+  }
+
+  const variants = await ProductVariantModel.listForProduct(product.id, client);
+  const onSale = variants.filter((variant) => variant.is_active);
+  if (onSale.length === 0) add("variants", "Add at least one active variant");
+  for (const variant of onSale) {
+    for (const [field, , label] of missingVariantDetails(variant)) {
+      add(`variants.${variant.sku}.${field}`, `Enter the ${label} for ${variant.sku}`);
+    }
+    if (!profile.tax_id && Number(variant.gst_rate) !== 0) {
+      add(`variants.${variant.sku}.gstRate`, `Without a GSTIN, the GST rate for ${variant.sku} must be 0`);
+    }
+  }
+
+  if ((await ProductImageModel.countForProduct(product.id, client)) === 0) add("images", "Add at least one image");
+
+  return problems;
+}
+
+// POST /api/seller/products/:id/publish: puts a draft or paused product on sale.
+async function publishProduct(req, res) {
+  const product = await db.transaction(async (client) => {
+    // Locked first, matching the profile edit, so a GSTIN change can't slip past these checks.
+    const profile = await SellerProfileModel.findByUserIdForShare(req.user.id, client);
+    if (profile?.verification_status !== "approved") {
+      throw new ApiError(403, "Your store must be approved before you can publish", { code: "SELLER_NOT_APPROVED" });
+    }
+
+    const current = await ProductModel.lockOwned(req.params.id, profile.id, client);
+    if (!current) throw productNotFound();
+
+    if (current.blocked_at) {
+      throw new ApiError(403, `An admin has blocked this product: ${current.blocked_reason}`, {
+        code: "PRODUCT_BLOCKED",
+      });
+    }
+
+    const problems = await findPublishProblems(current, profile, client);
+    if (problems.length > 0) {
+      throw new ApiError(400, "This product isn't ready to publish", { code: "PRODUCT_NOT_READY", details: problems });
+    }
+
+    return ProductModel.setStatus(current.id, "active", client);
+  });
+
+  res.json({ product: await loadDetails(product) });
+}
+
+// POST /api/seller/products/:id/pause: takes a product off sale, keeping everything. Publishing brings it back.
+async function pauseProduct(req, res) {
+  const product = await db.transaction(async (client) => {
+    const current = await ProductModel.lockOwned(req.params.id, req.sellerProfile.id, client);
+    if (!current) throw productNotFound();
+    if (current.status === "draft") {
+      throw new ApiError(409, "This product is a draft, so it isn't on sale", { code: "INVALID_STATUS_CHANGE" });
+    }
+    return ProductModel.setStatus(current.id, "paused", client);
+  });
+
+  res.json({ product: await loadDetails(product) });
+}
+
 module.exports = {
+  publishProduct,
+  pauseProduct,
   createProduct,
   listProducts,
   getProduct,

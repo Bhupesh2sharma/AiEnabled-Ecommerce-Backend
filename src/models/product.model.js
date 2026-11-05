@@ -137,6 +137,20 @@ async function update(id, fields, client) {
   return rows[0];
 }
 
+async function setStatus(id, status, client) {
+  const { rows } = await client.query("UPDATE products SET status = $2 WHERE id = $1 RETURNING *", [id, status]);
+  return rows[0];
+}
+
+// Takes all of a seller's products off sale. Returns how many were changed.
+async function unpublishAll(sellerId, client) {
+  const { rowCount } = await client.query(
+    "UPDATE products SET status = 'draft' WHERE seller_id = $1 AND status <> 'draft' AND deleted_at IS NULL",
+    [sellerId]
+  );
+  return rowCount;
+}
+
 // Sets min_price to the lowest price customers could pay, or NULL if no variant is on sale.
 async function refreshMinPrice(id, client) {
   await client.query(
@@ -156,4 +170,15 @@ async function softDelete(id, client) {
   await client.query("UPDATE products SET deleted_at = NOW() WHERE id = $1", [id]);
 }
 
-module.exports = { toSellerProduct, create, findOwned, lockOwned, listOwned, update, refreshMinPrice, softDelete };
+module.exports = {
+  toSellerProduct,
+  create,
+  findOwned,
+  lockOwned,
+  listOwned,
+  update,
+  setStatus,
+  unpublishAll,
+  refreshMinPrice,
+  softDelete,
+};

@@ -31,6 +31,8 @@ router.get("/products", canRead, validate(schemas.listProducts, "query"), asyncH
 router.get("/products/:id", canRead, idParam, asyncHandler(product.getProduct));
 router.patch("/products/:id", canWrite, idParam, validate(schemas.updateProduct), asyncHandler(product.updateProduct));
 router.delete("/products/:id", canWrite, idParam, asyncHandler(product.deleteProduct));
+router.post("/products/:id/publish", canWrite, idParam, asyncHandler(product.publishProduct));
+router.post("/products/:id/pause", canWrite, idParam, asyncHandler(product.pauseProduct));
 
 router.post(
   "/products/:id/variants",

@@ -87,6 +87,15 @@ async function findByUserIdForUpdate(userId, client) {
   return rows[0] ?? null;
 }
 
+// Blocks a profile edit until the transaction ends, while other readers can continue.
+async function findByUserIdForShare(userId, client) {
+  const { rows } = await client.query(
+    "SELECT * FROM seller_profiles WHERE user_id = $1 AND deleted_at IS NULL FOR SHARE",
+    [userId]
+  );
+  return rows[0] ?? null;
+}
+
 // The only columns a seller can change. Column names come from this list, never from the request.
 const EDITABLE_COLUMNS = {
   storeName: "store_name",
@@ -169,6 +178,7 @@ module.exports = {
   findById,
   findByUserId,
   findByUserIdForUpdate,
+  findByUserIdForShare,
   update,
   listByStatus,
   decideVerification,

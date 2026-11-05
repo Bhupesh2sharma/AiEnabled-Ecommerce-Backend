@@ -386,7 +386,8 @@ A non-draft product must have `generic_name`, `country_of_origin`, `manufacturer
 - Only `approved` sellers can publish, and sellers can only touch their own products. Sellers can't unblock a product. Suspended sellers can only read.
 - Creating a product or changing its category takes the category tree lock in shared mode.
 - Deleting a product also deletes its variants.
-- `hsn_code` is required to publish if the seller has a GSTIN.
+- `hsn_code` is required to publish, and to stay published, if the seller has a GSTIN.
+- `status` changes only through publish and pause, and a seller gaining or losing a GSTIN returns their non-draft products to `draft`.
 - Products attach only to a category with no children.
 - Whenever a variant's price or status changes, recalculate `min_price` in the same transaction.
 - Orders must **copy** title, price, GST rate and HSN code when placed, so later edits never change past orders.
@@ -418,7 +419,7 @@ What's actually bought. Every product has at least one; a product with no option
 | `created_at` / `updated_at` / `deleted_at` | TIMESTAMPTZ | standard |
 
 **Rules (enforced in application code, not the DB)**
-- `net_quantity`, `weight_grams` and the dimensions are required to publish.
+- `net_quantity`, `weight_grams` and the dimensions are required on every active variant of a non-draft product.
 - At most 100 per product. A published product must keep at least one.
 - JSONB values must be sent with `JSON.stringify`, because the `pg` library turns a JavaScript array into a Postgres array.
 - `options` must match the category's options and allowed values.

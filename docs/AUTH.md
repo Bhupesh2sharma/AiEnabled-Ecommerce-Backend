@@ -153,7 +153,8 @@ be their own. `GET /seller/profile` shows their status and any rejection reason.
 | `rejected` | Anything | Back to `pending`, reason cleared |
 | `suspended` | Anything | 409 `PROFILE_SUSPENDED` |
 
-`taxId` is the seller's GSTIN. It's optional, and only its format is checked, not whether it's real.
+`taxId` is the seller's GSTIN. It's optional, and only its format is checked, not whether it's real. Gaining or losing
+one also returns the seller's published products to `draft`; see [CATALOG.md](CATALOG.md).
  Only approved sellers should list products, which must be enforced when products are added.
 
 ## Admins

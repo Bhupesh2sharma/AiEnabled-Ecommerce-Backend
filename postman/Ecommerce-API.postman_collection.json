@@ -1487,6 +1487,48 @@
           "response": []
         },
         {
+          "name": "Publish Product",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/seller/products/{{productId}}/publish",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seller",
+                "products",
+                "{{productId}}",
+                "publish"
+              ]
+            },
+            "description": "Puts a draft or paused product on sale. The store must be approved (403 `SELLER_NOT_APPROVED`) and the product not blocked (403 `PRODUCT_BLOCKED`). 400 `PRODUCT_NOT_READY` lists everything missing in `details`: legal details, an HSN code if the store has a GSTIN, an active variant with net quantity, weight and dimensions, and an image."
+          },
+          "response": []
+        },
+        {
+          "name": "Pause Product",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/seller/products/{{productId}}/pause",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seller",
+                "products",
+                "{{productId}}",
+                "pause"
+              ]
+            },
+            "description": "Takes a product off sale, keeping everything. Publish again to bring it back. 409 `INVALID_STATUS_CHANGE` for a draft."
+          },
+          "response": []
+        },
+        {
           "name": "Delete Variant",
           "request": {
             "method": "DELETE",

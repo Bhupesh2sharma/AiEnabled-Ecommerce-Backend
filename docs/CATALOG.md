@@ -8,7 +8,7 @@ How categories, brands, variant options and sellers' products work. The code is 
 **Related:** [DATABASE.md](DATABASE.md) (tables), [AUTH.md](AUTH.md) (login and roles) and
 [the Postman collection](../postman/Ecommerce-API.postman_collection.json) (runnable requests).
 
-**Built so far:** categories, brands, variant options, sellers creating, editing and deleting products and variants, stock changes and image uploads. Publishing and public product browsing aren't built yet, so every new product stays a draft for now.
+**Built so far:** categories, brands, variant options, sellers creating, editing and deleting products and variants, stock changes, image uploads, and publishing. Public product browsing isn't built yet, so customers can't see published products yet.
 
 ## Categories
 
@@ -63,7 +63,7 @@ A product is the listing; a variant is what's actually bought, with its own pric
 - **Category:** must be active, with no sub-categories. A product can move category only if its variants fit the new one.
 - **Brand:** send `brandName`. A match, ignoring case, is reused; otherwise a new brand is created. An inactive brand is refused. `null` removes it.
 - **URL:** made from the title with a random ending, and it stays the same when the title changes.
-- **Drafts can be incomplete:** a published product can't lose its generic name, country of origin or manufacturer details.
+- **Drafts can be incomplete:** see "Publishing" for what a published product needs.
 
 ### Variants
 
@@ -147,6 +147,42 @@ Category images and brand logos use `POST /admin/uploads/signature`; save the re
 - Files uploaded but never attached stay in the bucket, and so do files of soft-deleted products. A scheduled cleanup can be added later.
 - Store logos and banners are still plain URLs.
 
+## Publishing
+
+```mermaid
+stateDiagram-v2
+    [*] --> draft
+    draft --> active: publish
+    active --> paused: pause
+    paused --> active: publish
+    active --> draft: store gains or loses a GSTIN
+    paused --> draft: store gains or loses a GSTIN
+```
+
+Status changes only through `POST /seller/products/:id/publish` and `/pause`. Publishing is immediate, with no admin review of each product; admins can block a product instead.
+
+**To publish, the store must be approved, the product must not be blocked, and it needs:**
+
+| Area | Required |
+|---|---|
+| Legal details | Generic name, country of origin, manufacturer's name and address |
+| HSN code | Only if the store has a GSTIN |
+| Category | Active, with no sub-categories |
+| Variants | At least one active, and every active one needs net quantity, weight, length, width and height |
+| GST rate | 0 on every active variant if the store has no GSTIN |
+| Images | At least one |
+
+A failed publish returns 400 `PRODUCT_NOT_READY`, with everything missing listed in `details`, so a seller can fix it all at once. Stock isn't required, so a published product can show as out of stock.
+
+**Once published:**
+- A product can't lose its legal details, or its HSN code if the store has a GSTIN.
+- A variant can't lose its details, and a new or re-activated one must be complete. A variant can be inactive and incomplete.
+- A product must keep one variant and one image. Pause it to take it off sale.
+
+**GSTIN changes:** gaining or losing a GSTIN changes the tax on every product, so all the seller's published and paused products return to `draft`, and the store goes back for review. `PATCH /seller/profile` returns how many in `productsUnpublished`. Replacing one GSTIN with another leaves products published, though the store still goes back for review, which hides them.
+
+A store's rate of 0 can't be checked for accuracy, so after gaining a GSTIN, sellers must update their variants' GST rates themselves; the HSN code is required, but a 0% rate is still accepted. Have the CA confirm how this should work.
+
 ## Endpoints
 
 All paths start with `/api`.
@@ -177,6 +213,8 @@ All paths start with `/api`.
 | `GET /seller/products/:id` | Seller | One of my products, with its variants |
 | `PATCH /seller/products/:id` | Seller | Edit a product; `null` clears an optional field |
 | `DELETE /seller/products/:id` | Seller | Soft delete a product and its variants |
+| `POST /seller/products/:id/publish` | Approved seller | Put a draft or paused product on sale |
+| `POST /seller/products/:id/pause` | Seller | Take a product off sale |
 | `POST /seller/products/:id/variants` | Seller | Add a variant |
 | `PATCH /seller/variants/:id` | Seller | Edit a variant |
 | `DELETE /seller/variants/:id` | Seller | Soft delete a variant |
@@ -218,7 +256,11 @@ Errors use the format in [AUTH.md](AUTH.md).
 | 400 | `INVALID_UPLOAD` | The file isn't in your folder, or failed the image checks |
 | 400 | `UPLOAD_NOT_FOUND` | No file has been uploaded for this key |
 | 400 | `IMAGE_LIMIT_REACHED` | The product already has 8 images |
+| 400 | `PRODUCT_NOT_READY` | Can't publish yet; see `details` |
+| 400 | `VARIANT_DETAILS_REQUIRED` | A variant on a published product needs these details |
 | 403 | `SELLER_PROFILE_REQUIRED` | Create a store profile first |
+| 403 | `SELLER_NOT_APPROVED` | Only an approved store can publish |
+| 403 | `PRODUCT_BLOCKED` | An admin has blocked this product |
 | 403 | `PROFILE_SUSPENDED` | A suspended seller can only read |
 | 404 | `NOT_FOUND` | The record doesn't exist, or belongs to another seller |
 | 409 | `CONFLICT` | A name, slug, code, SKU or variant's options are taken, or a record is linked to other data |
@@ -228,6 +270,7 @@ Errors use the format in [AUTH.md](AUTH.md).
 | 409 | `OPTION_IN_USE` | A category uses this option |
 | 409 | `VARIANTS_DONT_FIT_CATEGORY` | Edit or remove these variants before moving the product |
 | 409 | `LAST_VARIANT` | A published product must keep a variant |
+| 409 | `INVALID_STATUS_CHANGE` | A draft can't be paused |
 | 409 | `LAST_IMAGE` | A published product must keep an image |
 | 409 | `INSUFFICIENT_STOCK` | The change would take stock below 0 |
 | 409 | `INITIAL_STOCK_ALREADY_SET` | This variant already has history; use `restock` or `correction` |
@@ -252,5 +295,5 @@ Errors use the format in [AUTH.md](AUTH.md).
 | `src/utils/imageFile.js` | Allowed image types and the file checks |
 | `src/utils/variantOptions.js`, `gst.js` | Option checks and allowed GST rates |
 | `src/validators/catalog.validator.js`, `product.validator.js` | Request rules |
-| `tests/catalog.test.js`, `products.test.js`, `images.test.js` | API tests |
+| `tests/catalog.test.js`, `products.test.js`, `images.test.js`, `publish.test.js` | API tests |
 | `tests/storage.test.js` | The real storage code. Its upload tests run against an S3-compatible server when `TEST_S3_ENDPOINT`, `TEST_S3_ACCESS_KEY`, `TEST_S3_SECRET_KEY` and `TEST_S3_BUCKET` are set, and are skipped otherwise |

@@ -1,6 +1,7 @@
 // Seller onboarding. Admin review of the profile is in admin.controller.js.
 
 const db = require("../config/db");
+const ProductModel = require("../models/product.model");
 const SellerProfileModel = require("../models/sellerProfile.model");
 const ApiError = require("../utils/ApiError");
 
@@ -56,7 +57,7 @@ async function getProfile(req, res) {
 async function updateProfile(req, res) {
   await assertOwnsPickupAddress(req.user.id, req.body.pickupAddressId);
 
-  const updated = await db.transaction(async (client) => {
+  const { updated, productsUnpublished } = await db.transaction(async (client) => {
     // The lock stops an admin's decision landing between this check and the update.
     const profile = await SellerProfileModel.findByUserIdForUpdate(req.user.id, client);
     if (!profile) throw profileNotFound();
@@ -72,10 +73,19 @@ async function updateProfile(req, res) {
       profile.verification_status === "rejected" ||
       (profile.verification_status === "approved" && legalChanged);
 
-    return SellerProfileModel.update(profile.id, req.body, { resetReview: needsReview }, client);
+    // Gaining or losing a GSTIN changes the tax on every product, so they must be re-published
+    // with the right HSN codes and GST rates. A new GSTIN number on its own doesn't change that.
+    const { taxId } = req.body;
+    const gstinChanged = taxId !== undefined && Boolean(taxId) !== Boolean(profile.tax_id);
+    const unpublished = gstinChanged ? await ProductModel.unpublishAll(profile.id, client) : 0;
+
+    return {
+      updated: await SellerProfileModel.update(profile.id, req.body, { resetReview: needsReview }, client),
+      productsUnpublished: unpublished,
+    };
   });
 
-  res.json({ profile: SellerProfileModel.toPublicProfile(updated) });
+  res.json({ profile: SellerProfileModel.toPublicProfile(updated), productsUnpublished });
 }
 
 module.exports = { createProfile, getProfile, updateProfile };
