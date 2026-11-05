@@ -7,4 +7,8 @@ const quantity = z.number().int().min(1).max(10);
 
 const addItem = z.strictObject({ variantId: z.uuid("Invalid id"), quantity: quantity.default(1) });
 
-module.exports = { addItem };
+const changeItem = z.strictObject({ quantity });
+
+const variantParam = z.object({ variantId: z.uuid("Invalid id") });
+
+module.exports = { addItem, changeItem, variantParam };

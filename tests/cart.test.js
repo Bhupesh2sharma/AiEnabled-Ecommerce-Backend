@@ -8,6 +8,7 @@ require("./testEnv");
 
 const app = require("../src/app");
 const db = require("../src/config/db");
+const UserModel = require("../src/models/user.model");
 const { signAccessToken } = require("../src/utils/token");
 
 let server;
@@ -620,4 +621,221 @@ test("parallel adds of different variants can't pass 50 items", async () => {
   const results = await Promise.all(variants.map((id) => add(id)));
   assert.equal(results.filter((res) => res.status === 200).length, 5);
   assert.equal(await rowCount(customer), 50);
+});
+
+// ---------- Changing and removing ----------
+
+const change = (variantId, quantity, as = token) => api("PATCH", `/cart/items/${variantId}`, { as, body: { quantity } });
+const remove = (variantId, as = token) => api("DELETE", `/cart/items/${variantId}`, { as });
+const clearCart = (as = token) => api("DELETE", "/cart", { as });
+
+test("only customers can change, remove or empty", async () => {
+  const seller = tokenFor(await makeUser("seller"), "seller");
+  const admin = tokenFor(await makeUser("admin"), "admin");
+  for (const [as, status] of [[seller, 403], [admin, 403], [undefined, 401]]) {
+    assert.equal((await api("PATCH", `/cart/items/${MISSING_ID}`, { as, body: { quantity: 1 } })).status, status);
+    assert.equal((await api("DELETE", `/cart/items/${MISSING_ID}`, { as })).status, status);
+    assert.equal((await api("DELETE", "/cart", { as })).status, status);
+  }
+});
+
+test("changing sets the quantity, not adds to it, and returns the whole cart", async () => {
+  const { variantId } = await onSale();
+  await add(variantId, 2);
+  const res = await change(variantId, 5);
+  assert.equal(res.status, 200);
+  assert.equal(res.body.items[0].quantity, 5);
+  assert.equal(res.body.totals.subtotal, "1500.00");
+  assert.equal((await change(variantId, 1)).body.items[0].quantity, 1);
+  assert.equal((await change(variantId, 1)).status, 200); // the same quantity is fine
+});
+
+test("bad changes get a 400", async () => {
+  const { variantId } = await onSale();
+  await add(variantId, 2);
+  for (const quantity of [0, -1, 11, 1.5, "2", null]) {
+    assert.equal((await change(variantId, quantity)).status, 400, String(quantity));
+  }
+  const noBody = await api("PATCH", `/cart/items/${variantId}`, { as: token, body: {} });
+  assert.equal(noBody.status, 400);
+  const extra = await api("PATCH", `/cart/items/${variantId}`, { as: token, body: { quantity: 1, price: "1.00" } });
+  assert.equal(extra.status, 400);
+  assert.equal((await api("PATCH", "/cart/items/abc", { as: token, body: { quantity: 1 } })).status, 400);
+  assert.equal((await remove("abc")).status, 400);
+  assert.equal((await itemOf(variantId)).quantity, 2);
+});
+
+test("raising a quantity can't pass the stock", async () => {
+  const { variantId } = await onSale({ stock: 3 });
+  await add(variantId, 1);
+  const res = await change(variantId, 4);
+  assert.equal(res.status, 409);
+  assert.equal(res.body.code, "NOT_ENOUGH_STOCK");
+  assert.equal(res.body.details[0].maxQuantity, 3);
+  assert.equal((await itemOf(variantId)).quantity, 1);
+  assert.equal((await change(variantId, 3)).status, 200);
+});
+
+test("a customer can fix an item that ran short by lowering it", async () => {
+  const { variantId } = await onSale({ stock: 5 });
+  await add(variantId, 4);
+  await db.query("UPDATE product_variants SET stock_quantity = 2 WHERE id = $1", [variantId]);
+  assert.equal((await itemOf(variantId)).status, "not_enough_stock");
+
+  // Lowering helps even if it isn't enough yet, and raising is refused.
+  assert.equal((await change(variantId, 3)).status, 200);
+  assert.equal((await itemOf(variantId)).status, "not_enough_stock");
+  assert.equal((await change(variantId, 4)).body.code, "NOT_ENOUGH_STOCK");
+
+  const fixed = await change(variantId, 2);
+  assert.equal(fixed.status, 200);
+  assert.equal(fixed.body.items[0].status, "available");
+  assert.equal(fixed.body.canCheckout, true);
+});
+
+test("a sold-out item can be lowered but not raised", async () => {
+  const { variantId } = await onSale({ stock: 5 });
+  await add(variantId, 3);
+  await db.query("UPDATE product_variants SET stock_quantity = 0 WHERE id = $1", [variantId]);
+  const raised = await change(variantId, 4);
+  assert.equal(raised.status, 409);
+  assert.equal(raised.body.code, "OUT_OF_STOCK");
+  assert.equal((await change(variantId, 1)).status, 200);
+  assert.equal((await itemOf(variantId)).status, "out_of_stock");
+});
+
+test("an unavailable item can't be changed, only removed", async () => {
+  const { listing, variantId } = await onSale();
+  await add(variantId, 3);
+  await db.query("UPDATE products SET status = 'paused' WHERE id = $1", [listing.productId]);
+  for (const quantity of [1, 3, 5]) {
+    const res = await change(variantId, quantity);
+    assert.equal(res.status, 409, String(quantity));
+    assert.equal(res.body.code, "PRODUCT_UNAVAILABLE");
+  }
+  assert.equal((await itemOf(variantId)).quantity, 3);
+
+  const removed = await remove(variantId);
+  assert.equal(removed.status, 200);
+  assert.deepEqual(removed.body.items, []);
+});
+
+test("changing or removing what's not in the cart is a 404, and adds nothing", async () => {
+  const { variantId } = await onSale();
+  for (const id of [variantId, MISSING_ID]) {
+    const changed = await change(id, 1);
+    assert.equal(changed.status, 404);
+    assert.equal(changed.body.code, "NOT_FOUND");
+    assert.equal((await remove(id)).status, 404);
+  }
+  assert.equal(await rowCount(customer), 0);
+});
+
+test("removing takes out one item, and returns the updated cart", async () => {
+  const a = await onSale({ price: "100.00", mrp: "100.00" });
+  const b = await onSale({ price: "200.00", mrp: "200.00" });
+  await add(a.variantId);
+  await add(b.variantId);
+  const res = await remove(a.variantId);
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.items.map((item) => item.variantId), [b.variantId]);
+  assert.equal(res.body.totals.subtotal, "200.00");
+  assert.equal((await remove(a.variantId)).status, 404);
+  // A removed item can be added again from the start.
+  assert.equal((await add(a.variantId, 2)).body.items.find((item) => item.variantId === a.variantId).quantity, 2);
+});
+
+test("removing an item frees a place under the 50-item limit", async () => {
+  const listing = await makeListing();
+  const variants = [];
+  for (let i = 0; i < 51; i += 1) variants.push(await addVariant(listing, { options: { n: String(i) } }));
+  for (const id of variants.slice(0, 50)) await addRow(customer, id);
+  assert.equal((await add(variants[50])).body.code, "CART_LIMIT_REACHED");
+  await remove(variants[0]);
+  assert.equal((await add(variants[50])).status, 200);
+});
+
+test("emptying removes everything, whatever its status, and repeating it is fine", async () => {
+  const { listing, variantId } = await onSale();
+  const other = await onSale();
+  await add(variantId);
+  await add(other.variantId);
+  await db.query("UPDATE products SET status = 'paused' WHERE id = $1", [listing.productId]);
+
+  const res = await clearCart();
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body, {
+    items: [],
+    totals: { itemCount: 0, subtotal: "0.00", mrpTotal: "0.00", savings: "0.00" },
+    canCheckout: false,
+  });
+  assert.equal(await rowCount(customer), 0);
+  assert.equal((await clearCart()).status, 200);
+});
+
+test("changing, removing and emptying leave other customers' carts alone", async () => {
+  const { variantId } = await onSale();
+  const other = tokenFor(await makeUser());
+  await add(variantId, 2, other);
+
+  assert.equal((await change(variantId, 5)).status, 404);
+  assert.equal((await remove(variantId)).status, 404);
+  await clearCart();
+  const theirs = await getCart(other);
+  assert.equal(theirs.items.length, 1);
+  assert.equal(theirs.items[0].quantity, 2);
+});
+
+test("a removed item stays removed when a change arrives at the same moment", async () => {
+  const { variantId } = await onSale();
+  for (let round = 0; round < 30; round += 1) {
+    await add(variantId, 1);
+    const [changed, removed] = await Promise.all([change(variantId, 2), remove(variantId)]);
+    assert.equal(removed.status, 200, `round ${round}`);
+    assert.ok([200, 404].includes(changed.status), `round ${round}: ${changed.status}`);
+    assert.equal(await rowCount(customer), 0, `round ${round}: change ${changed.status}`);
+  }
+});
+
+test("emptying can't leave an item that a change was updating", async () => {
+  const { variantId } = await onSale();
+  for (let round = 0; round < 30; round += 1) {
+    await add(variantId, 1);
+    await Promise.all([change(variantId, 2), clearCart()]);
+    assert.equal(await rowCount(customer), 0, `round ${round}`);
+  }
+});
+
+// A race between checking and saving is too brief to hit reliably, so this holds the lock open instead.
+for (const [name, send] of [
+  ["removing", (variantId) => remove(variantId)],
+  ["emptying", () => clearCart()],
+]) {
+  test(`${name} waits for a change in progress, so it can't slip between its check and its save`, async () => {
+    const { variantId } = await onSale();
+    await add(variantId, 1);
+
+    let finished = false;
+    let request;
+    await db.transaction(async (client) => {
+      await UserModel.lockForChange(customer, client);
+      request = send(variantId).then((res) => {
+        finished = true;
+        return res;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      assert.equal(finished, false);
+    });
+    assert.equal((await request).status, 200);
+    assert.equal(await rowCount(customer), 0);
+  });
+}
+
+test("parallel changes leave one of the quantities sent", async () => {
+  const { variantId } = await onSale({ stock: 100 });
+  await add(variantId, 1);
+  const results = await Promise.all([2, 3, 4, 5, 6, 7].map((quantity) => change(variantId, quantity)));
+  assert.ok(results.every((res) => res.status === 200));
+  assert.ok([2, 3, 4, 5, 6, 7].includes((await itemOf(variantId)).quantity));
+  assert.equal(await rowCount(customer), 1);
 });

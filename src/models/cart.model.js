@@ -90,4 +90,17 @@ async function setQuantity(userId, variantId, quantity, client) {
   );
 }
 
-module.exports = { listForUser, findStockIfOnSale, findQuantity, countItems, setQuantity };
+// Returns false if the item wasn't in the cart.
+async function removeItem(userId, variantId, client) {
+  const { rowCount } = await client.query("DELETE FROM cart_items WHERE user_id = $1 AND variant_id = $2", [
+    userId,
+    variantId,
+  ]);
+  return rowCount > 0;
+}
+
+async function clear(userId, client) {
+  await client.query("DELETE FROM cart_items WHERE user_id = $1", [userId]);
+}
+
+module.exports = { listForUser, findStockIfOnSale, findQuantity, countItems, setQuantity, removeItem, clear };

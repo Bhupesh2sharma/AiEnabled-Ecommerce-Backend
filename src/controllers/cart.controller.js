@@ -1,5 +1,6 @@
 // A customer's cart. Nothing is held: prices and stock are read live on every view, and stock is only
-// taken when an order is placed. Only customers reach this, in cart.routes.js.
+// taken when an order is placed. Only customers reach this, in cart.routes.js. Every change locks the
+// user first, so a change and a removal arriving together can't bring back a removed item.
 //
 // Responses are built field by field, so seller-only data (exact stock, SKUs, GST details, why a product
 // is hidden) can't reach customers by accident when a column is added.
@@ -12,6 +13,8 @@ const ApiError = require("../utils/ApiError");
 
 const MAX_PER_ITEM = 10;
 const MAX_ITEMS = 50;
+
+const notInCart = () => new ApiError(404, "This item isn't in your cart", { code: "NOT_FOUND" });
 
 // Readable options, such as "Size: M". A seller's custom value carries its own label on the variant.
 function toOptions(row, labels) {
@@ -114,4 +117,54 @@ async function addItem(req, res) {
   res.json(await buildCart(req.user.id));
 }
 
-module.exports = { getCart, addItem };
+// PATCH /api/cart/items/:variantId: sets the quantity. Lowering is always allowed for an item on sale, so a
+// customer can fix one that ran short. An unavailable item can only be removed.
+async function changeItem(req, res) {
+  const { variantId } = req.params;
+  const { quantity } = req.body;
+
+  await db.transaction(async (client) => {
+    await UserModel.lockForChange(req.user.id, client);
+
+    const current = await CartModel.findQuantity(req.user.id, variantId, client);
+    if (current === null) throw notInCart();
+
+    const stock = await CartModel.findStockIfOnSale(variantId, client);
+    if (stock === null) throw new ApiError(409, "This product isn't available", { code: "PRODUCT_UNAVAILABLE" });
+
+    if (quantity > current) {
+      if (stock === 0) throw new ApiError(409, "This product is out of stock", { code: "OUT_OF_STOCK" });
+      if (quantity > stock) {
+        const maxQuantity = Math.min(MAX_PER_ITEM, stock);
+        throw quantityError(`Only ${maxQuantity} of this item can be in your cart`, "NOT_ENOUGH_STOCK", maxQuantity);
+      }
+    }
+
+    await CartModel.setQuantity(req.user.id, variantId, quantity, client);
+  });
+
+  res.json(await buildCart(req.user.id));
+}
+
+// DELETE /api/cart/items/:variantId: works whatever the item's status.
+async function removeItem(req, res) {
+  const removed = await db.transaction(async (client) => {
+    await UserModel.lockForChange(req.user.id, client);
+    return CartModel.removeItem(req.user.id, req.params.variantId, client);
+  });
+  if (!removed) throw notInCart();
+
+  res.json(await buildCart(req.user.id));
+}
+
+// DELETE /api/cart: emptying an empty cart is fine.
+async function clearCart(req, res) {
+  await db.transaction(async (client) => {
+    await UserModel.lockForChange(req.user.id, client);
+    await CartModel.clear(req.user.id, client);
+  });
+
+  res.json(await buildCart(req.user.id));
+}
+
+module.exports = { getCart, addItem, changeItem, removeItem, clearCart };

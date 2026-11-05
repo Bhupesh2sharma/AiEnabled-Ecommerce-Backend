@@ -8,7 +8,7 @@ How customers' carts work. The code is the source of truth.
 **Related:** [DATABASE.md](DATABASE.md) (tables), [CATALOG.md](CATALOG.md) (what's on sale) and
 [the Postman collection](../postman/Ecommerce-API.postman_collection.json) (runnable requests).
 
-**Built so far:** viewing a cart and adding items. Changing, removing and merging a guest's cart come next.
+**Built so far:** viewing a cart, adding, changing and removing items, and emptying it. Merging a guest's cart comes next.
 
 ## How it works
 
@@ -25,7 +25,12 @@ All paths start with `/api`. Sellers and admins get 403.
 | Method and path | Access | Purpose |
 |---|---|---|
 | `GET /cart` | Customer | The cart, with live details and totals |
-| `POST /cart/items` | Customer | Add a variant, with `variantId` and `quantity` (default 1). Adding one already in the cart adds to its quantity. Returns the whole cart |
+| `POST /cart/items` | Customer | Add a variant, with `variantId` and `quantity` (default 1). Adding one already in the cart adds to its quantity |
+| `PATCH /cart/items/:variantId` | Customer | Set an item's quantity, with `quantity` |
+| `DELETE /cart/items/:variantId` | Customer | Remove one item, whatever its status |
+| `DELETE /cart` | Customer | Empty the cart. Emptying an empty cart is fine |
+
+Each of these returns the whole cart, so the frontend needs no second request.
 
 ## The response
 
@@ -74,11 +79,17 @@ All paths start with `/api`. Sellers and admins get 403.
 - **`unavailable`** doesn't say why, so a block reason or a seller's suspension stays private. Its `price`, `mrp`, `discountPercent` and `lineTotal` are `null`, because it can't be bought at any price.
 - **Exact stock stays private:** `maxQuantity` is the smaller of 10 and the stock, so a customer learns stock only up to 10. SKUs, GST rates and HSN codes aren't returned either.
 
+## Changing a quantity
+
+- **Lowering** is allowed for any item on sale, so a customer can fix a `not_enough_stock` item, even in steps.
+- **Raising** must fit the stock.
+- **An `unavailable` item** can't be changed, only removed.
+
 ## Limits
 
 - **10 per item.** Adding beyond this is refused rather than quietly capped.
 - **50 different items in a cart.**
-- **Parallel requests:** each add first locks the user's row, so requests arriving together can't pass a limit or lose a quantity. It doesn't lock the variant, because the cart doesn't take stock.
+- **Parallel requests:** each change first locks the user's row, so requests arriving together can't pass a limit, lose a quantity or bring back a removed item. It doesn't lock the variant, because the cart doesn't take stock.
 
 ## Errors
 
@@ -89,6 +100,7 @@ Errors use the format `{ message, code?, details? }`.
 | 400 | `VALIDATION_ERROR` | A field is invalid; `details` lists each one |
 | 401 | `UNAUTHORIZED` | Not logged in |
 | 403 | `FORBIDDEN` | Logged in as a seller or admin |
+| 404 | `NOT_FOUND` | Changing or removing an item that isn't in the cart |
 | 409 | `PRODUCT_UNAVAILABLE` | The variant isn't on sale, or doesn't exist. The same answer for both, so hidden products can't be discovered |
 | 409 | `OUT_OF_STOCK` | The variant's stock is 0 |
 | 409 | `NOT_ENOUGH_STOCK` | The new quantity would pass the stock. `details[0].maxQuantity` says how many are allowed |
@@ -105,7 +117,7 @@ Errors use the format `{ message, code?, details? }`.
 | Location | Contents |
 |---|---|
 | `src/routes/cart.routes.js` | URLs under `/cart` |
-| `src/controllers/cart.controller.js` | Add rules, limits and the response |
+| `src/controllers/cart.controller.js` | Add and change rules, limits and the response |
 | `src/models/cart.model.js` | SQL, including item status and totals |
 | `src/models/browse.model.js` | The visibility rules, shared with browsing |
 | `src/validators/cart.validator.js` | Request rules |
