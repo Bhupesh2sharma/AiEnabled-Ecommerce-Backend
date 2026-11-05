@@ -74,6 +74,14 @@ async function makeSeller() {
      VALUES ($1, 'Store', 'store', 'Legal', 'approved')`,
     [rows[0].id]
   );
+  await db.query(
+    `WITH address AS (
+       INSERT INTO addresses (user_id, full_name, phone, address_line1, city, state, state_code, postal_code)
+       VALUES ($1, 'A', '+919876543210', 'L', 'Pune', 'Maharashtra', '27', '411001') RETURNING id
+     )
+     UPDATE seller_profiles SET pickup_address_id = (SELECT id FROM address) WHERE user_id = $1`,
+    [rows[0].id]
+  );
   return signAccessToken(rows[0]);
 }
 

@@ -166,6 +166,7 @@ Status changes only through `POST /seller/products/:id/publish` and `/pause`. Pu
 | Area | Required |
 |---|---|
 | Legal details | Generic name, country of origin, manufacturer's name and address |
+| Pickup address | The store must have one; see [ADDRESSES.md](ADDRESSES.md) |
 | HSN code | Only if the store has a GSTIN |
 | Category | Active, with no sub-categories |
 | Variants | At least one active, and every active one needs net quantity, weight, length, width and height |

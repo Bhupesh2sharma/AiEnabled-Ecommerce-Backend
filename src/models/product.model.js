@@ -151,6 +151,15 @@ async function unpublishAll(sellerId, client) {
   return rowCount;
 }
 
+// Whether a store has products that are on sale or paused. Those need a pickup address to stay valid.
+async function hasPublished(sellerId, client) {
+  const { rowCount } = await client.query(
+    "SELECT 1 FROM products WHERE seller_id = $1 AND status <> 'draft' AND deleted_at IS NULL LIMIT 1",
+    [sellerId]
+  );
+  return rowCount > 0;
+}
+
 // Sets min_price to the lowest price customers could pay, or NULL if no variant is on sale.
 async function refreshMinPrice(id, client) {
   await client.query(
@@ -179,6 +188,7 @@ module.exports = {
   update,
   setStatus,
   unpublishAll,
+  hasPublished,
   refreshMinPrice,
   softDelete,
 };

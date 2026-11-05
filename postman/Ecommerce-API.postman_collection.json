@@ -1062,7 +1062,7 @@
                 "{{addressId}}"
               ]
             },
-            "description": "Send only what changes. `null` clears `label`, `addressLine2` or `landmark`. Changing `stateCode` also changes `state`.",
+            "description": "Send only what changes. `null` clears `label`, `addressLine2` or `landmark`. Changing `stateCode` also changes `state`. For a store's pickup address: 400 `PICKUP_STATE_MISMATCH` if the new state doesn't match the GSTIN, and 409 `PROFILE_SUSPENDED` if the store is suspended.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"city\": \"Mumbai\",\n  \"stateCode\": \"27\",\n  \"postalCode\": \"400001\",\n  \"landmark\": null\n}",
@@ -1123,7 +1123,7 @@
                 "{{addressId}}"
               ]
             },
-            "description": "Permanent. A default passes to the most recently added address."
+            "description": "Permanent. A default passes to the most recently added address. 409 `ADDRESS_IN_USE` if it's your store's pickup address: choose another first."
           },
           "response": []
         }
@@ -1218,10 +1218,43 @@
                 "profile"
               ]
             },
-            "description": "Send only the fields to change; `null` clears an optional field. `taxId` is an optional GSTIN. Editing a rejected profile, or `legalBusinessName`, `businessType` or `taxId` on an approved one, returns it to `pending`. 409 `PROFILE_SUSPENDED` if suspended, 409 if the slug is taken.",
+            "description": "Send only the fields to change; `null` clears an optional field. `taxId` is an optional GSTIN. Editing a rejected profile, or `legalBusinessName`, `businessType` or `taxId` on an approved one, returns it to `pending`. 409 `PROFILE_SUSPENDED` if suspended, 409 if the slug is taken. 400 `PICKUP_STATE_MISMATCH` if a new GSTIN isn't in the pickup address's state.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"description\": \"Updated store description\",\n  \"taxId\": \"22AAAAA0000A1Z5\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Set Pickup Address",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/seller/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seller",
+                "profile"
+              ]
+            },
+            "description": "Run Create Address first. Publishing needs a pickup address. 400 `INVALID_PICKUP_ADDRESS` if it isn't yours, 400 `PICKUP_STATE_MISMATCH` if it isn't in your GSTIN's state. Sending `null` clears it, refused with 409 `PICKUP_ADDRESS_REQUIRED` while products are published or paused.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pickupAddressId\": \"{{addressId}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1707,7 +1740,7 @@
                 "publish"
               ]
             },
-            "description": "Puts a draft or paused product on sale. The store must be approved (403 `SELLER_NOT_APPROVED`) and the product not blocked (403 `PRODUCT_BLOCKED`). 400 `PRODUCT_NOT_READY` lists everything missing in `details`: legal details, an HSN code if the store has a GSTIN, an active variant with net quantity, weight and dimensions, and an image."
+            "description": "Puts a draft or paused product on sale. The store must be approved (403 `SELLER_NOT_APPROVED`) and the product not blocked (403 `PRODUCT_BLOCKED`). 400 `PRODUCT_NOT_READY` lists everything missing in `details`: a store pickup address, legal details, an HSN code if the store has a GSTIN, an active variant with net quantity, weight and dimensions, and an image."
           },
           "response": []
         },

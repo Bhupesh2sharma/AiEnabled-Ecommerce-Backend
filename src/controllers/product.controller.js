@@ -340,6 +340,7 @@ async function findPublishProblems(product, profile, client) {
     if (!product[column]) add(field, message);
   }
   if (profile.tax_id && !product.hsn_code) add("hsnCode", "Enter the HSN code, because this store has a GSTIN");
+  if (!profile.pickup_address_id) add("pickupAddress", "Add a pickup address to your store");
 
   await CategoryModel.lockTreeShared(client);
   if (!(await CategoryModel.isVisible(product.category_id, client))) {

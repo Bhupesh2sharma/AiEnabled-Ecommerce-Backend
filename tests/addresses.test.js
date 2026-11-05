@@ -35,7 +35,7 @@ let userId;
 let token;
 
 beforeEach(async () => {
-  await db.query("TRUNCATE users CASCADE");
+  await db.query("TRUNCATE users, categories CASCADE");
   const { rows } = await db.query(
     `INSERT INTO users (name, email, role, email_verified_at, terms_accepted_at, terms_version)
      VALUES ('Test', 'address@example.com', 'seller', NOW(), NOW(), 'v1') RETURNING id, role`
@@ -473,4 +473,329 @@ test("the address lock doesn't block rows that point at the user, such as a logi
       );
     });
   });
+});
+
+// ---------- A store's pickup address ----------
+
+const GSTIN_22 = "22AAAAA0000A1Z5";
+const CHHATTISGARH = { stateCode: "22", postalCode: "492001", city: "Raipur" };
+
+let storeCounter = 0;
+async function makeStore({ status = "approved", taxId = null, pickupAddressId = null } = {}) {
+  storeCounter += 1;
+  const { rows } = await db.query(
+    `INSERT INTO seller_profiles (user_id, store_name, store_slug, legal_business_name, verification_status, tax_id, pickup_address_id)
+     VALUES ($1, 'Store', $2, 'Legal', $3, $4, $5) RETURNING id`,
+    [userId, `pickup-store-${storeCounter}`, status, taxId, pickupAddressId]
+  );
+  return rows[0].id;
+}
+
+const patchProfile = (body) => api("PATCH", "/seller/profile", { body });
+const profile = async () => (await api("GET", "/seller/profile")).body.profile;
+
+// A product ready to publish, or in the given status.
+async function makeProduct(storeId, status = "draft") {
+  storeCounter += 1;
+  const n = storeCounter;
+  const category = await db.query("INSERT INTO categories (name, slug) VALUES ($1, $1) RETURNING id", [`c-${n}`]);
+  const { rows } = await db.query(
+    `INSERT INTO products (seller_id, category_id, title, slug, generic_name, country_of_origin, manufacturer_name,
+                           manufacturer_address, hsn_code, status)
+     VALUES ($1, $2, 'Mug', $3, 'Mug', 'IN', 'Maker', '1 Road', '6912', $4) RETURNING id`,
+    [storeId, category.rows[0].id, `p-${n}`, status]
+  );
+  await db.query(
+    `INSERT INTO product_variants (product_id, seller_id, sku, mrp, selling_price, net_quantity, weight_grams,
+                                   length_mm, width_mm, height_mm)
+     VALUES ($1, $2, $3, 600, 300, '1 N', 300, 100, 100, 100)`,
+    [rows[0].id, storeId, `S-${n}`]
+  );
+  await db.query(
+    `INSERT INTO product_images (product_id, storage_provider, storage_key, url, is_primary)
+     VALUES ($1, 'r2', $2, 'https://cdn.test/x.png', TRUE)`,
+    [rows[0].id, `k-${n}`]
+  );
+  return rows[0].id;
+}
+
+const statusOf = async (id) => (await db.query("SELECT status FROM products WHERE id = $1", [id])).rows[0].status;
+const publish = (id) => api("POST", `/seller/products/${id}/publish`);
+
+test("a store can set its own address as pickup, but not someone else's or an unknown one", async () => {
+  await makeStore();
+  const mine = await add();
+  const res = await patchProfile({ pickupAddressId: mine.id });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.profile.pickupAddressId, mine.id);
+
+  const other = await makeUser("seller", "neighbour-seller@example.com");
+  const theirs = await add({}, other);
+  for (const pickupAddressId of [theirs.id, MISSING_ID]) {
+    const refused = await patchProfile({ pickupAddressId });
+    assert.equal(refused.status, 400);
+    assert.equal(refused.body.code, "INVALID_PICKUP_ADDRESS");
+  }
+  assert.equal((await profile()).pickupAddressId, mine.id);
+});
+
+test("a new store can name a pickup address, and it must match the GSTIN's state", async () => {
+  await db.query("UPDATE users SET phone = '+919000000099', phone_verified_at = NOW() WHERE id = $1", [userId]);
+  const store = { storeName: "New", storeSlug: "new-store", legalBusinessName: "Legal" };
+  const pune = await add();
+
+  const wrong = await api("POST", "/seller/profile", { body: { ...store, taxId: GSTIN_22, pickupAddressId: pune.id } });
+  assert.equal(wrong.status, 400);
+  assert.equal(wrong.body.code, "PICKUP_STATE_MISMATCH");
+  assert.match(wrong.body.message, /Chhattisgarh/);
+
+  const unknown = await api("POST", "/seller/profile", { body: { ...store, pickupAddressId: MISSING_ID } });
+  assert.equal(unknown.body.code, "INVALID_PICKUP_ADDRESS");
+  assert.equal((await api("GET", "/seller/profile")).status, 404);
+
+  const raipur = await add(CHHATTISGARH);
+  const ok = await api("POST", "/seller/profile", { body: { ...store, taxId: GSTIN_22, pickupAddressId: raipur.id } });
+  assert.equal(ok.status, 201);
+  assert.equal(ok.body.profile.pickupAddressId, raipur.id);
+});
+
+test("a store's pickup address can't be deleted until another is chosen", async () => {
+  await makeStore();
+  const first = await add();
+  const second = await add();
+  await patchProfile({ pickupAddressId: first.id });
+
+  const refused = await api("DELETE", `/addresses/${first.id}`);
+  assert.equal(refused.status, 409);
+  assert.equal(refused.body.code, "ADDRESS_IN_USE");
+  assert.equal((await api("GET", `/addresses/${first.id}`)).status, 200);
+  assert.equal((await profile()).pickupAddressId, first.id);
+
+  await patchProfile({ pickupAddressId: second.id });
+  assert.equal((await api("DELETE", `/addresses/${first.id}`)).status, 204);
+  assert.equal((await profile()).pickupAddressId, second.id);
+});
+
+test("other addresses of a store can still be deleted", async () => {
+  await makeStore();
+  const pickup = await add();
+  const other = await add();
+  await patchProfile({ pickupAddressId: pickup.id });
+  assert.equal((await api("DELETE", `/addresses/${other.id}`)).status, 204);
+});
+
+test("a pickup address can be cleared only while nothing is published", async () => {
+  const pickup = await add();
+  const store = await makeStore({ pickupAddressId: pickup.id });
+
+  assert.equal((await patchProfile({ pickupAddressId: null })).status, 200);
+  assert.equal((await patchProfile({ pickupAddressId: pickup.id })).status, 200);
+
+  await makeProduct(store, "draft");
+  assert.equal((await patchProfile({ pickupAddressId: null })).status, 200);
+  await patchProfile({ pickupAddressId: pickup.id });
+
+  for (const status of ["active", "paused"]) {
+    const product = await makeProduct(store, status);
+    const refused = await patchProfile({ pickupAddressId: null });
+    assert.equal(refused.status, 409, status);
+    assert.equal(refused.body.code, "PICKUP_ADDRESS_REQUIRED");
+    assert.equal((await profile()).pickupAddressId, pickup.id);
+    await db.query("UPDATE products SET deleted_at = NOW() WHERE id = $1", [product]);
+  }
+
+  // Deleted products don't count.
+  assert.equal((await patchProfile({ pickupAddressId: null })).status, 200);
+  await patchProfile({ pickupAddressId: pickup.id });
+
+  // Changing to another address is always fine.
+  const other = await add();
+  await makeProduct(store, "active");
+  assert.equal((await patchProfile({ pickupAddressId: other.id })).status, 200);
+});
+
+test("publishing needs a pickup address, listed with anything else missing", async () => {
+  const store = await makeStore();
+  const product = await makeProduct(store);
+  await db.query("DELETE FROM product_images WHERE product_id = $1", [product]);
+
+  const res = await publish(product);
+  assert.equal(res.status, 400);
+  assert.equal(res.body.code, "PRODUCT_NOT_READY");
+  assert.deepEqual(res.body.details.map((detail) => detail.field).sort(), ["images", "pickupAddress"]);
+  assert.equal(await statusOf(product), "draft");
+
+  await db.query(
+    `INSERT INTO product_images (product_id, storage_provider, storage_key, url, is_primary)
+     VALUES ($1, 'r2', 'again', 'https://cdn.test/x.png', TRUE)`,
+    [product]
+  );
+  await patchProfile({ pickupAddressId: (await add()).id });
+  assert.equal((await publish(product)).status, 200);
+  assert.equal(await statusOf(product), "active");
+});
+
+test("with a GSTIN, the pickup address must be in the same state, however either changes", async () => {
+  await makeStore({ taxId: GSTIN_22 });
+  const pune = await add();
+  const raipur = await add(CHHATTISGARH);
+  const mismatch = (res) => {
+    assert.equal(res.status, 400, JSON.stringify(res.body));
+    assert.equal(res.body.code, "PICKUP_STATE_MISMATCH");
+  };
+
+  // Choosing an address in another state.
+  mismatch(await patchProfile({ pickupAddressId: pune.id }));
+  assert.equal((await patchProfile({ pickupAddressId: raipur.id })).status, 200);
+
+  // Moving the pickup address to another state.
+  mismatch(await api("PATCH", `/addresses/${raipur.id}`, { body: { stateCode: "27" } }));
+  assert.equal((await api("GET", `/addresses/${raipur.id}`)).body.address.stateCode, "22");
+  assert.equal((await api("PATCH", `/addresses/${raipur.id}`, { body: { stateCode: "22", city: "Bilaspur" } })).status, 200);
+
+  // Replacing the GSTIN with one from another state.
+  mismatch(await patchProfile({ taxId: "27AAAAA0000A1Z5" }));
+  assert.equal((await profile()).taxId, GSTIN_22);
+
+  // Changing both together works.
+  const both = await patchProfile({ taxId: "27AAAAA0000A1Z5", pickupAddressId: pune.id });
+  assert.equal(both.status, 200);
+  assert.equal(both.body.profile.taxId, "27AAAAA0000A1Z5");
+});
+
+test("adding a GSTIN must match an existing pickup address, and a refusal changes nothing", async () => {
+  const pune = await add();
+  const store = await makeStore({ pickupAddressId: pune.id });
+  const live = await makeProduct(store, "active");
+
+  const res = await patchProfile({ taxId: GSTIN_22 });
+  assert.equal(res.body.code, "PICKUP_STATE_MISMATCH");
+  assert.equal(await statusOf(live), "active"); // not returned to draft
+  assert.equal((await profile()).verificationStatus, "approved");
+
+  const fits = await patchProfile({ taxId: "27AAAAA0000A1Z5" });
+  assert.equal(fits.status, 200);
+  assert.equal(fits.body.productsUnpublished, 1);
+});
+
+test("without a GSTIN, or for other addresses, any state is fine", async () => {
+  const pune = await add();
+  const other = await add();
+  await makeStore({ pickupAddressId: pune.id });
+  assert.equal((await api("PATCH", `/addresses/${pune.id}`, { body: { stateCode: "29" } })).status, 200);
+
+  await db.query("UPDATE seller_profiles SET tax_id = $1 WHERE user_id = $2", [GSTIN_22, userId]);
+  assert.equal((await api("PATCH", `/addresses/${other.id}`, { body: { stateCode: "07" } })).status, 200);
+
+  // Removing the GSTIN removes the rule.
+  assert.equal((await patchProfile({ taxId: null })).status, 200);
+  assert.equal((await api("PATCH", `/addresses/${pune.id}`, { body: { stateCode: "27" } })).status, 200);
+});
+
+test("an unrelated edit doesn't fail over a mismatch saved earlier", async () => {
+  const pune = await add();
+  await makeStore({ taxId: GSTIN_22, pickupAddressId: pune.id });
+  assert.equal((await patchProfile({ description: "New" })).status, 200);
+  assert.equal((await api("PATCH", `/addresses/${pune.id}`, { body: { landmark: "Near the bank" } })).status, 200);
+});
+
+test("a suspended store can't change its pickup address, but can choose defaults and use other addresses", async () => {
+  const pickup = await add();
+  const other = await add();
+  await makeStore({ status: "suspended", pickupAddressId: pickup.id });
+
+  const refused = await api("PATCH", `/addresses/${pickup.id}`, { body: { city: "Elsewhere" } });
+  assert.equal(refused.status, 409);
+  assert.equal(refused.body.code, "PROFILE_SUSPENDED");
+  assert.equal((await api("GET", `/addresses/${pickup.id}`)).body.address.city, "Pune");
+
+  assert.equal((await api("PATCH", `/addresses/${pickup.id}`, { body: { isDefaultBilling: true } })).status, 200);
+  assert.equal((await api("PATCH", `/addresses/${other.id}`, { body: { city: "Mumbai" } })).status, 200);
+  assert.equal((await api("DELETE", `/addresses/${pickup.id}`)).status, 409);
+});
+
+test("changing a pickup address doesn't send an approved store back for review", async () => {
+  const pickup = await add();
+  const other = await add();
+  await makeStore({ pickupAddressId: pickup.id });
+  await api("PATCH", `/addresses/${pickup.id}`, { body: { city: "Mumbai" } });
+  await patchProfile({ pickupAddressId: other.id });
+  assert.equal((await profile()).verificationStatus, "approved");
+});
+
+test("an address and a store changing together can't end up in different states", async () => {
+  const pickup = await add(CHHATTISGARH);
+  await makeStore({ pickupAddressId: pickup.id });
+  for (let round = 0; round < 15; round += 1) {
+    const [moved, gstin] = await Promise.all([
+      api("PATCH", `/addresses/${pickup.id}`, { body: { stateCode: "27" } }),
+      patchProfile({ taxId: GSTIN_22 }),
+    ]);
+    const { rows } = await db.query(
+      "SELECT s.tax_id, a.state_code FROM seller_profiles s JOIN addresses a ON a.id = s.pickup_address_id WHERE s.user_id = $1",
+      [userId]
+    );
+    if (rows[0].tax_id) assert.equal(rows[0].tax_id.slice(0, 2), rows[0].state_code, `round ${round}: ${moved.status}/${gstin.status}`);
+    await db.query("UPDATE seller_profiles SET tax_id = NULL WHERE user_id = $1", [userId]);
+    await db.query("UPDATE addresses SET state_code = '22', state = 'Chhattisgarh' WHERE id = $1", [pickup.id]);
+  }
+});
+
+test("deleting an address while choosing it as pickup can't leave the store pointing at nothing", async () => {
+  await makeStore();
+  const keep = await add();
+  for (let round = 0; round < 15; round += 1) {
+    await patchProfile({ pickupAddressId: keep.id });
+    const address = await add();
+    const [chosen, deleted] = await Promise.all([
+      patchProfile({ pickupAddressId: address.id }),
+      api("DELETE", `/addresses/${address.id}`),
+    ]);
+    assert.equal(
+      [chosen.status, deleted.status].sort().join(),
+      deleted.status === 204 ? "204,400" : "200,409",
+      `round ${round}: ${chosen.status}/${deleted.status}`
+    );
+    const current = (await profile()).pickupAddressId;
+    assert.equal(current, chosen.status === 200 ? address.id : keep.id, `round ${round}`);
+    if (chosen.status === 200) {
+      await patchProfile({ pickupAddressId: keep.id });
+      await api("DELETE", `/addresses/${address.id}`);
+    }
+  }
+});
+
+test("creating a store while deleting its pickup address can't both succeed", async () => {
+  await db.query("UPDATE users SET phone = '+919000000098', phone_verified_at = NOW() WHERE id = $1", [userId]);
+  const store = { storeName: "New", storeSlug: "race-store", legalBusinessName: "Legal" };
+  for (let round = 0; round < 30; round += 1) {
+    const address = await add();
+    const [created, deleted] = await Promise.all([
+      api("POST", "/seller/profile", { body: { ...store, pickupAddressId: address.id } }),
+      api("DELETE", `/addresses/${address.id}`),
+    ]);
+    assert.equal(
+      [created.status, deleted.status].sort().join(),
+      created.status === 201 ? "201,409" : "204,400",
+      `round ${round}: create ${created.status}, delete ${deleted.status}`
+    );
+    await db.query("DELETE FROM seller_profiles WHERE user_id = $1", [userId]);
+    await db.query("DELETE FROM addresses WHERE user_id = $1", [userId]);
+  }
+});
+
+test("clearing a pickup address while publishing can't leave a live product without one", async () => {
+  const pickup = await add();
+  const store = await makeStore({ pickupAddressId: pickup.id });
+  for (let round = 0; round < 15; round += 1) {
+    const product = await makeProduct(store);
+    const [published, cleared] = await Promise.all([publish(product), patchProfile({ pickupAddressId: null })]);
+    const current = await profile();
+    assert.ok(
+      (await statusOf(product)) === "draft" || current.pickupAddressId,
+      `round ${round}: publish ${published.status}, clear ${cleared.status}`
+    );
+    await db.query("UPDATE products SET status = 'draft', deleted_at = NOW() WHERE id = $1", [product]);
+    await patchProfile({ pickupAddressId: pickup.id });
+  }
 });

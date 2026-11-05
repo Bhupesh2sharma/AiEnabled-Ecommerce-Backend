@@ -53,6 +53,15 @@ async function makeSeller({ status = "approved", taxId = null } = {}) {
      VALUES ($1, 'Store', $2, 'Legal', $3, $4, $5) RETURNING id`,
     [user.id, `store-${counter}`, status, taxId, status === "rejected" ? "Reason" : null]
   );
+  // In the same state as GSTIN below, because publishing needs a pickup address.
+  await db.query(
+    `WITH address AS (
+       INSERT INTO addresses (user_id, full_name, phone, address_line1, city, state, state_code, postal_code)
+       VALUES ($1, 'A', '+919876543210', 'L', 'Raipur', 'Chhattisgarh', '22', '492001') RETURNING id
+     )
+     UPDATE seller_profiles SET pickup_address_id = (SELECT id FROM address) WHERE id = $2`,
+    [user.id, rows[0].id]
+  );
   return { token: signAccessToken(user), id: rows[0].id };
 }
 
@@ -402,7 +411,7 @@ test("other profile edits, and replacing one GSTIN with another, leave products 
   assert.equal(same.body.productsUnpublished, 0);
   assert.equal(same.body.profile.verificationStatus, "approved");
 
-  const replaced = await seller("PATCH", "/profile", { taxId: "27AAAAA0000A1Z5" }, t);
+  const replaced = await seller("PATCH", "/profile", { taxId: "22BBBBB0000B1Z5" }, t);
   assert.equal(replaced.body.productsUnpublished, 0);
   assert.equal(replaced.body.profile.verificationStatus, "pending");
   assert.equal(await statusOf(product.id), "active");

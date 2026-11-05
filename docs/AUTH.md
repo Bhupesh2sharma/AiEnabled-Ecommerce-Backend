@@ -5,7 +5,7 @@ How login, sessions, roles and verification work in this backend. The code is th
 > Keep this file in sync with the code. Any change to auth behaviour, endpoints, limits or settings
 > must update this document in the same change.
 
-**Related:** [DATABASE.md](DATABASE.md) (tables) and
+**Related:** [DATABASE.md](DATABASE.md) (tables), [ADDRESSES.md](ADDRESSES.md) (pickup address rules) and
 [the Postman collection](../postman/Ecommerce-API.postman_collection.json) (runnable requests).
 
 ## Who can do what
@@ -263,6 +263,7 @@ In development, 5xx responses also include `stack`. Elsewhere, unexpected errors
 | 400 | `SIGNUP_DETAILS_REQUIRED` | New phone signup without `name` and `termsAccepted`; the code stays usable |
 | 400 | `TERMS_REQUIRED` | New Google signup without terms |
 | 400 | `INVALID_PICKUP_ADDRESS` | Address isn't the seller's own |
+| 400 | `PICKUP_STATE_MISMATCH` | The pickup address isn't in the GSTIN's state |
 | 401 | `UNAUTHORIZED` | Missing or invalid access token, or the account is no longer active |
 | 401 | `INVALID_CREDENTIALS` | Wrong email or password |
 | 401 | `INVALID_REFRESH_TOKEN` | Refresh cookie is missing, invalid, expired or already used |
@@ -278,6 +279,7 @@ In development, 5xx responses also include `stack`. Elsewhere, unexpected errors
 | 409 | `EMAIL_ALREADY_VERIFIED` | Email is already verified |
 | 409 | `INVALID_STATUS_CHANGE` | Profile has already been approved |
 | 409 | `PROFILE_SUSPENDED` | A suspended profile can't be edited |
+| 409 | `PICKUP_ADDRESS_REQUIRED` | A store with published or paused products can't clear its pickup address |
 | 429 | `ACCOUNT_LOCKED` | Too many failed logins on this account |
 | 429 | `RATE_LIMITED` | Too many requests from this IP |
 | 429 | `OTP_COOLDOWN` | Wait before requesting another code |

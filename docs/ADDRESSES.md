@@ -54,13 +54,29 @@ The state list is in `src/utils/indianStates.js`. It leaves out old GST codes 25
 
 - **Limit:** 20 addresses per user. Over the limit returns 409 `ADDRESS_LIMIT_REACHED`.
 - **Deleting is permanent:** unlike most tables, there's no soft delete, so unused home addresses aren't kept. Orders will copy the address when placed, so past orders won't change.
-- **Parallel requests:** every change first locks the user's row, so requests arriving together can't pass the limit or leave two defaults. The lock doesn't block logins.
+- **Parallel requests:** every address change, and every change to a store's profile, first locks the user's row, so requests arriving together can't pass the limit, leave two defaults or break the pickup rules. The lock doesn't block logins.
+
+## A store's pickup address
+
+A seller chooses one of their addresses with `pickupAddressId` on `POST` or `PATCH /seller/profile`. It's where orders ship from, and it decides the tax with the delivery state.
+
+| Rule | Result |
+|---|---|
+| It must be the seller's own | 400 `INVALID_PICKUP_ADDRESS` |
+| Publishing needs one | `pickupAddress` is listed in 400 `PRODUCT_NOT_READY` |
+| It can't be deleted, even with no products | 409 `ADDRESS_IN_USE`. Choose another first |
+| It can't be cleared while products are published or paused | 409 `PICKUP_ADDRESS_REQUIRED`. Changing to another is fine |
+| With a GSTIN, it must be in the GSTIN's state | 400 `PICKUP_STATE_MISMATCH` |
+| A suspended store can't change it | 409 `PROFILE_SUSPENDED`. Choosing it as a personal default is still allowed |
+
+- **GSTIN and state:** a GSTIN's first 2 digits are its state code. This is checked when choosing a pickup address, moving that address to another state, or adding or replacing a GSTIN. Sending a new GSTIN and pickup address together works. A store has one pickup address, so it ships from one state for now. Have the CA confirm this rule, and whether GSTINs starting with the old codes 25 or 28 still exist, because they can't match any address.
+- **Changing it doesn't send an approved store back for review,** because that would hide all its products over an ordinary move. Admins can see the address.
+- **Products already live:** publishing is checked once, so products published before this rule stay live with no pickup address. This can only be development data.
 
 ## Known gaps
 
 - **PIN code and state can disagree:** a user could choose the wrong state, which could mean the wrong tax at checkout. Checking needs PIN code data from India Post or a courier API, so it fits best with shipping.
 - **Addresses aren't checked as real:** only their format is.
-- **A store's pickup address has no protection yet:** deleting it clears the store's pickup address. Step 3 of the plan refuses this.
 
 ## Errors
 
@@ -69,10 +85,13 @@ Errors use the format `{ message, code?, details? }`.
 | Status | Code | When |
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | A field is invalid; `details` lists each one |
+| 400 | `PICKUP_STATE_MISMATCH` | This would put a store's pickup address outside its GSTIN's state |
 | 401 | `UNAUTHORIZED` | Not logged in |
 | 403 | `FORBIDDEN` | Logged in as an admin |
 | 404 | `NOT_FOUND` | The address doesn't exist, or isn't yours |
 | 409 | `ADDRESS_LIMIT_REACHED` | Already 20 addresses |
+| 409 | `ADDRESS_IN_USE` | This is a store's pickup address |
+| 409 | `PROFILE_SUSPENDED` | A suspended store can't change its pickup address |
 
 ## Where the code is
 

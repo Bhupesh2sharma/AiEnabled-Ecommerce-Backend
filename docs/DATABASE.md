@@ -199,6 +199,7 @@ A user's address book. Used for customer shipping/billing and seller pickup. Ind
 - `state_code` must come from `src/utils/indianStates.js`, which also supplies `state`.
 - At most 20 addresses per user. A user's first address becomes both defaults, and deleting a default passes it to the newest address.
 - Every change locks the user's row first (`FOR NO KEY UPDATE`).
+- A store's pickup address can't be deleted. See `seller_profiles`.
 - Switching the default: unset the old default before setting the new one (same transaction),
   otherwise the unique index rejects it.
 
@@ -237,6 +238,8 @@ One profile per seller account (`users.role = 'seller'`).
 - Only create a profile for a user whose `role = 'seller'` and whose email and phone are both verified.
 - `verified_by` must be a user with `role = 'admin'`.
 - `pickup_address_id` must belong to the same seller (`addresses.user_id = seller_profiles.user_id`).
+- `pickup_address_id` can't be deleted, is required to publish, and can't be cleared while products are published or paused. With a `tax_id`, the address's `state_code` must equal the GSTIN's first 2 digits.
+- Changing the profile locks the user's row, then the profile, then products, in that order.
 - Only `approved` sellers may list products or receive orders.
 - Editing a `rejected` profile, or the legal details of an `approved` one, returns it to `pending` and clears
   `rejection_reason`, `verified_at` and `verified_by`. `suspended` profiles can't be edited.

@@ -35,8 +35,8 @@ function toAdminProfile(profile) {
 }
 
 // verification_status isn't set here, so the database default of `pending` applies.
-async function create(userId, fields) {
-  const { rows } = await db.query(
+async function create(userId, fields, client = db) {
+  const { rows } = await client.query(
     `INSERT INTO seller_profiles (
        user_id, store_name, store_slug, description, logo_url, banner_url, support_email,
        support_phone, business_type, legal_business_name, tax_id, pickup_address_id
@@ -61,15 +61,6 @@ async function create(userId, fields) {
   return rows[0];
 }
 
-// A pickup address must belong to the seller creating the profile.
-async function userOwnsAddress(userId, addressId) {
-  const { rowCount } = await db.query(
-    "SELECT 1 FROM addresses WHERE id = $1 AND user_id = $2",
-    [addressId, userId]
-  );
-  return rowCount === 1;
-}
-
 // Finds a seller's own profile.
 async function findByUserId(userId) {
   const { rows } = await db.query("SELECT * FROM seller_profiles WHERE user_id = $1 AND deleted_at IS NULL", [
@@ -83,6 +74,15 @@ async function findByUserIdForUpdate(userId, client) {
   const { rows } = await client.query(
     "SELECT * FROM seller_profiles WHERE user_id = $1 AND deleted_at IS NULL FOR UPDATE",
     [userId]
+  );
+  return rows[0] ?? null;
+}
+
+// The store using this address as its pickup address, if any.
+async function findByPickupAddress(addressId, client) {
+  const { rows } = await client.query(
+    "SELECT * FROM seller_profiles WHERE pickup_address_id = $1 AND deleted_at IS NULL",
+    [addressId]
   );
   return rows[0] ?? null;
 }
@@ -174,7 +174,7 @@ module.exports = {
   toPublicProfile,
   toAdminProfile,
   create,
-  userOwnsAddress,
+  findByPickupAddress,
   findById,
   findByUserId,
   findByUserIdForUpdate,
