@@ -70,6 +70,17 @@ const browseProducts = z
 
 const productSlugParam = z.object({ slug: slug(220) });
 
+const adminProductQuery = z.object({
+  status: z.enum(["draft", "active", "paused"]).optional(),
+  blocked: z.stringbool().optional(),
+  sellerId: uuid.optional(),
+  q: searchText.transform((value) => value || undefined).optional(), // part of a title, or an exact slug
+  ...paging,
+});
+
+// Sellers see this reason, so it should tell them what to fix.
+const blockProduct = z.strictObject({ reason: z.string().trim().min(1, "Give a reason").max(1000) });
+
 const createCategory = z.object({
   name: name(100),
   slug: slug(120).optional(), // made from the name if not sent
@@ -150,6 +161,8 @@ module.exports = {
   brandQuery,
   browseProducts,
   productSlugParam,
+  adminProductQuery,
+  blockProduct,
   createCategory,
   updateCategory,
   createBrand,

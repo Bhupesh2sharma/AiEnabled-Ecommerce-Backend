@@ -1974,7 +1974,7 @@
     },
     {
       "name": "Admin Catalog",
-      "description": "Manage categories, brands and variant options. Uses `adminAccessToken`, so run Admin Log In first. Names and slugs must be unique, so change them when re-running. Run in order: creating saves the ids that later requests use.",
+      "description": "Manage categories, brands and variant options, and moderate products. Uses `adminAccessToken`, so run Admin Log In first. Names and slugs must be unique, so change them when re-running. Run in order: creating saves the ids that later requests use.",
       "auth": {
         "type": "bearer",
         "bearer": [
@@ -2489,6 +2489,131 @@
                 }
               }
             }
+          },
+          "response": []
+        },
+        {
+          "name": "List Products (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products?page=1&limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "active",
+                  "disabled": true
+                },
+                {
+                  "key": "blocked",
+                  "value": "true",
+                  "disabled": true
+                },
+                {
+                  "key": "sellerId",
+                  "value": "{{sellerProfileId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "q",
+                  "value": "mug",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Every seller's products in any status, including blocked, but not deleted. `status` is `draft`, `active` or `paused`. `blocked` is `true` or `false`. `q` finds part of a title or an exact slug. `limit` is at most 100."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Product (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "products",
+                "{{productId}}"
+              ]
+            },
+            "description": "One product in any status, with all its variants and images. Use it to review a product before unblocking, because a blocked product has no public page. Run Create Product first, or set `productId`."
+          },
+          "response": []
+        },
+        {
+          "name": "Block Product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products/{{productId}}/block",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "products",
+                "{{productId}}",
+                "block"
+              ]
+            },
+            "description": "Hides the product from customers at once and leaves its status alone. The seller sees the reason, so say what to fix. 400 without a reason. 409 `INVALID_STATUS_CHANGE` if already blocked.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"The brand on this listing looks fake. Send proof of authenticity to support.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Unblock Product",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/products/{{productId}}/unblock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "products",
+                "{{productId}}",
+                "unblock"
+              ]
+            },
+            "description": "Removes the block and returns the product to its status, so a live product goes straight back on sale. Review it first, because the seller may have edited it. 409 `INVALID_STATUS_CHANGE` if it isn't blocked."
           },
           "response": []
         },

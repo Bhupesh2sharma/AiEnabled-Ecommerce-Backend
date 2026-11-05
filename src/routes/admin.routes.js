@@ -2,6 +2,7 @@
 
 const { Router } = require("express");
 const admin = require("../controllers/admin.controller");
+const adminProduct = require("../controllers/adminProduct.controller");
 const brand = require("../controllers/brand.controller");
 const category = require("../controllers/category.controller");
 const image = require("../controllers/image.controller");
@@ -81,6 +82,16 @@ router.delete(
   validate(catalog.valueParams, "params"),
   asyncHandler(variantOption.removeValue)
 );
+
+router.get("/products", validate(catalog.adminProductQuery, "query"), asyncHandler(adminProduct.list));
+router.get("/products/:id", validate(catalog.idParam, "params"), asyncHandler(adminProduct.getOne));
+router.post(
+  "/products/:id/block",
+  validate(catalog.idParam, "params"),
+  validate(catalog.blockProduct),
+  asyncHandler(adminProduct.block)
+);
+router.post("/products/:id/unblock", validate(catalog.idParam, "params"), asyncHandler(adminProduct.unblock));
 
 router.post(
   "/uploads/signature",

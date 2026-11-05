@@ -383,7 +383,7 @@ A non-draft product must have `generic_name`, `country_of_origin`, `manufacturer
 
 **Rules (enforced in application code, not the DB)**
 - A product appears to customers only when: `status = 'active'`, not blocked or deleted; the seller is `approved` and their account active; the category and every category above it are active; and it has a live variant and an image. All public reads use `src/models/browse.model.js`, which applies these.
-- Only `approved` sellers can publish, and sellers can only touch their own products. Sellers can't unblock a product. Suspended sellers can only read.
+- Only `approved` sellers can publish, and sellers can only touch their own products. Sellers can't unblock a product. Blocking doesn't change `status`, and unblocking clears `blocked_at`, `blocked_by` and `blocked_reason`, so past blocks aren't kept. Suspended sellers can only read.
 - Creating a product or changing its category takes the category tree lock in shared mode.
 - Deleting a product also deletes its variants.
 - `hsn_code` is required to publish, and to stay published, if the seller has a GSTIN.

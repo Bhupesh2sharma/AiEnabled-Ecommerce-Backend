@@ -8,7 +8,7 @@ How categories, brands, variant options and sellers' products work. The code is 
 **Related:** [DATABASE.md](DATABASE.md) (tables), [AUTH.md](AUTH.md) (login and roles) and
 [the Postman collection](../postman/Ecommerce-API.postman_collection.json) (runnable requests).
 
-**Built so far:** categories, brands, variant options, sellers creating, editing and deleting products and variants, stock changes, image uploads, publishing, and public browsing and search. Admins can't block products yet.
+**Built so far:** categories, brands, variant options, sellers creating, editing and deleting products and variants, stock changes, image uploads, publishing, public browsing and search, and admin moderation.
 
 ## Categories
 
@@ -228,6 +228,19 @@ Everything a product page needs: description, highlights, specifications, catego
 
 **Speed:** tested on 100,000 products with 3 variants each. Every query tried took about 210 ms or less. The total count is the slowest part. Cursor pagination can follow if this becomes a problem.
 
+## Moderation
+
+Publishing has no review of each product, so admins can act afterwards: `POST /admin/products/:id/block` with a `reason`, and `/unblock`.
+
+- **Blocking** hides a product from customers at once. Its `status` doesn't change.
+- **Unblocking** returns it to that status, so a live product goes straight back on sale and a draft stays a draft. It still needs an approved seller and an active category to be seen.
+- **Sellers** see `isBlocked` and `blockedReason` on their products, so the reason should say what to fix. They can't publish (403 `PRODUCT_BLOCKED`) or clear the block, but they can edit, pause or delete the product. An edit stays hidden until an admin unblocks, so admins should re-check the product first with `GET /admin/products/:id`.
+- **Repeating:** blocking a blocked product, or unblocking one that isn't blocked, returns 409 `INVALID_STATUS_CHANGE` and changes nothing. To change a reason, unblock and block again.
+- **Records:** only the current block is kept. Unblocking clears who, when and why, so there's no history of past blocks. A deleted product keeps its block in the database.
+- **Not built:** sellers aren't emailed when blocked, and a seller could list a blocked product again as a new one.
+
+`GET /admin/products` lists every seller's products in any status, except deleted ones, newest first, with the store's name and approval status. Filters: `status`, `blocked`, `sellerId`, `q` (part of a title, or an exact slug), `page`, `limit` (at most 100, default 50).
+
 ## Endpoints
 
 All paths start with `/api`.
@@ -271,6 +284,10 @@ All paths start with `/api`.
 | `POST /seller/products/:id/images` | Seller | Attach an uploaded image |
 | `PATCH /seller/images/:id` | Seller | Edit an image's text, order or variant, or make it primary |
 | `DELETE /seller/images/:id` | Seller | Delete an image and its file |
+| `GET /admin/products` | Admin | Every seller's products in any status, including blocked |
+| `GET /admin/products/:id` | Admin | One product, with all its variants and images |
+| `POST /admin/products/:id/block` | Admin | Hide a product from customers, with a reason |
+| `POST /admin/products/:id/unblock` | Admin | Remove a block |
 | `POST /admin/uploads/signature` | Admin | Get a URL to upload a category image or brand logo |
 
 Request bodies are in `src/validators/catalog.validator.js`, `src/validators/product.validator.js` and the Postman collection. Category image and brand logo fields hold an `http` or `https` URL.
@@ -317,7 +334,7 @@ Errors use the format in [AUTH.md](AUTH.md).
 | 409 | `OPTION_IN_USE` | A category uses this option |
 | 409 | `VARIANTS_DONT_FIT_CATEGORY` | Edit or remove these variants before moving the product |
 | 409 | `LAST_VARIANT` | A published product must keep a variant |
-| 409 | `INVALID_STATUS_CHANGE` | A draft can't be paused |
+| 409 | `INVALID_STATUS_CHANGE` | A draft can't be paused, a blocked product can't be blocked again, or a product that isn't blocked can't be unblocked |
 | 409 | `LAST_IMAGE` | A published product must keep an image |
 | 409 | `INSUFFICIENT_STOCK` | The change would take stock below 0 |
 | 409 | `INITIAL_STOCK_ALREADY_SET` | This variant already has history; use `restock` or `correction` |
@@ -339,9 +356,10 @@ Errors use the format in [AUTH.md](AUTH.md).
 | `src/middlewares/sellerProfile.js` | Requires a store, and refuses suspended sellers' changes |
 | `src/controllers/image.controller.js`, `src/models/productImage.model.js` | Uploads and product images |
 | `src/controllers/browse.controller.js`, `src/models/browse.model.js` | Public browsing, search and the visibility rules |
+| `src/controllers/adminProduct.controller.js`, `src/models/adminProduct.model.js` | Admin product list, block and unblock |
 | `src/services/storage/` | R2 and S3 drivers |
 | `src/utils/imageFile.js` | Allowed image types and the file checks |
 | `src/utils/variantOptions.js`, `gst.js` | Option checks and allowed GST rates |
 | `src/validators/catalog.validator.js`, `product.validator.js` | Request rules |
-| `tests/catalog.test.js`, `products.test.js`, `images.test.js`, `publish.test.js`, `browse.test.js` | API tests |
+| `tests/catalog.test.js`, `products.test.js`, `images.test.js`, `publish.test.js`, `browse.test.js`, `moderation.test.js` | API tests |
 | `tests/storage.test.js` | The real storage code. Its upload tests run against an S3-compatible server when `TEST_S3_ENDPOINT`, `TEST_S3_ACCESS_KEY`, `TEST_S3_SECRET_KEY` and `TEST_S3_BUCKET` are set, and are skipped otherwise |
