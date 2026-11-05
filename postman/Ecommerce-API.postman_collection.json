@@ -159,6 +159,11 @@
       "key": "imageId",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "productSlug",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -1853,6 +1858,112 @@
               ]
             },
             "description": "Active brands by name. `q` finds names starting with it. `limit` is at most 100.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Browse Products",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const first = pm.response.json().products[0];",
+                  "  if (first) pm.collectionVariables.set('productSlug', first.slug);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/products?q=mug&page=1&limit=24",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "mug"
+                },
+                {
+                  "key": "categoryId",
+                  "value": "{{categoryId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "brandId",
+                  "value": "{{brandId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "minPrice",
+                  "value": "100",
+                  "disabled": true
+                },
+                {
+                  "key": "maxPrice",
+                  "value": "2000",
+                  "disabled": true
+                },
+                {
+                  "key": "inStock",
+                  "value": "true",
+                  "disabled": true
+                },
+                {
+                  "key": "option",
+                  "value": "size:m",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "newest",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "24"
+                }
+              ]
+            },
+            "description": "Products on sale. All parameters are optional and combine; tick the ones you want. `q` searches title and generic name and allows typos. `categoryId` includes everything below it. `brandId` and `option` take several values, as `a,b` or repeated. `option` uses codes, e.g. `size:m`. `minPrice` and `maxPrice` compare with the price shown. `sort` is `relevance`, `newest`, `price_asc` or `price_desc`. `limit` is at most 50 and `page` at most 1000. Saves the first product's slug for Get Product.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Product",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/products/{{productSlug}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products",
+                "{{productSlug}}"
+              ]
+            },
+            "description": "One product on sale, with its variants on sale, the `options` choices for a variant picker, images, legal details, returns and seller details. A hidden product returns 404, the same as one that doesn't exist.",
             "auth": {
               "type": "noauth"
             }

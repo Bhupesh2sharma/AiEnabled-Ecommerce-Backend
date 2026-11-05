@@ -382,7 +382,7 @@ The listing customers see. Enables the `pg_trgm` extension for typo-tolerant sea
 A non-draft product must have `generic_name`, `country_of_origin`, `manufacturer_name` and `manufacturer_address` (CHECK).
 
 **Rules (enforced in application code, not the DB)**
-- A product appears to customers only when: `status = 'active'`, not blocked or deleted; the seller is `approved` and their account active; the category is active; and it has a live variant and an image.
+- A product appears to customers only when: `status = 'active'`, not blocked or deleted; the seller is `approved` and their account active; the category and every category above it are active; and it has a live variant and an image. All public reads use `src/models/browse.model.js`, which applies these.
 - Only `approved` sellers can publish, and sellers can only touch their own products. Sellers can't unblock a product. Suspended sellers can only read.
 - Creating a product or changing its category takes the category tree lock in shared mode.
 - Deleting a product also deletes its variants.

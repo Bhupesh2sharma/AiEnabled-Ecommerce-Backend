@@ -23,7 +23,52 @@ const paging = {
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 };
-const brandQuery = z.object({ q: z.string().trim().max(100).optional(), ...paging });
+// Postgres refuses text containing a NUL character, so it's stopped here instead of becoming a 500.
+const searchText = z.string().trim().max(100).regex(/^[^\0]*$/, "Invalid search text");
+const brandQuery = z.object({ q: searchText.optional(), ...paging });
+
+// Accepts ?x=a,b and ?x=a&x=b.
+const listOf = (item, max) =>
+  z.preprocess(
+    (value) => (value === undefined ? value : [value].flat().flatMap((entry) => String(entry).split(","))),
+    z.array(item).min(1).max(max, `At most ${max} values`).optional()
+  );
+
+const price = z.string().trim().regex(/^[0-9]{1,10}(\.[0-9]{1,2})?$/, "Enter an amount such as 499 or 499.50");
+
+// "size:m" becomes { size: ["m"] }. Codes are stored lowercase, hyphenated.
+const optionFilter = z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*:[a-z0-9]+(-[a-z0-9]+)*$/, "Use option:value, e.g. size:m");
+const groupOptions = (pairs) => {
+  if (!pairs) return undefined;
+  const groups = {};
+  for (const pair of pairs) {
+    const [code, value] = pair.split(":");
+    (groups[code] ??= []).push(value);
+  }
+  return groups;
+};
+
+// The page cap also keeps a huge page number from reaching Postgres as an impossible OFFSET.
+const browseProducts = z
+  .object({
+    q: searchText.transform((value) => value || undefined).optional(), // an empty search box means no search
+    categoryId: uuid.optional(),
+    brandId: listOf(uuid, 20),
+    minPrice: price.optional(),
+    maxPrice: price.optional(),
+    inStock: z.stringbool().optional(),
+    option: listOf(optionFilter, 20).transform(groupOptions),
+    sort: z.enum(["relevance", "newest", "price_asc", "price_desc"]).optional(),
+    page: z.coerce.number().int().min(1).max(1000).default(1),
+    limit: z.coerce.number().int().min(1).max(50).default(24),
+  })
+  .refine((query) => !query.minPrice || !query.maxPrice || Number(query.minPrice) <= Number(query.maxPrice), {
+    path: ["minPrice"],
+    message: "minPrice can't be above maxPrice",
+  })
+  .transform((query) => ({ ...query, sort: query.sort ?? (query.q ? "relevance" : "newest") }));
+
+const productSlugParam = z.object({ slug: slug(220) });
 
 const createCategory = z.object({
   name: name(100),
@@ -103,6 +148,8 @@ module.exports = {
   idParam,
   valueParams,
   brandQuery,
+  browseProducts,
+  productSlugParam,
   createCategory,
   updateCategory,
   createBrand,

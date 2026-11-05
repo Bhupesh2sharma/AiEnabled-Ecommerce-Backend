@@ -8,7 +8,7 @@ How categories, brands, variant options and sellers' products work. The code is 
 **Related:** [DATABASE.md](DATABASE.md) (tables), [AUTH.md](AUTH.md) (login and roles) and
 [the Postman collection](../postman/Ecommerce-API.postman_collection.json) (runnable requests).
 
-**Built so far:** categories, brands, variant options, sellers creating, editing and deleting products and variants, stock changes, image uploads, and publishing. Public product browsing isn't built yet, so customers can't see published products yet.
+**Built so far:** categories, brands, variant options, sellers creating, editing and deleting products and variants, stock changes, image uploads, publishing, and public browsing and search. Admins can't block products yet.
 
 ## Categories
 
@@ -183,6 +183,51 @@ A failed publish returns 400 `PRODUCT_NOT_READY`, with everything missing listed
 
 A store's rate of 0 can't be checked for accuracy, so after gaining a GSTIN, sellers must update their variants' GST rates themselves; the HSN code is required, but a 0% rate is still accepted. Have the CA confirm how this should work.
 
+## Browsing
+
+Customers need no login to browse.
+
+**A product appears only when all of these are true:**
+- It's `active`, not blocked and not deleted
+- Its seller is `approved`, and the seller's account is active
+- Its category and every category above it are active
+- It has an active variant and an image
+
+This is checked on every read, so suspending a seller or hiding a category takes effect at once and undoing it brings the products back. A hidden product's page returns the same 404 as one that doesn't exist. Out-of-stock products stay visible, marked `inStock: false`. A deactivated brand doesn't hide its products.
+
+### `GET /products`
+
+| Parameter | Meaning |
+|---|---|
+| `q` | Search text, at most 100 characters. Blank means no search |
+| `categoryId` | That category and everything below it |
+| `brandId` | One or more brands, as `a,b` or repeated; at most 20 |
+| `minPrice`, `maxPrice` | Rupees, limits included. Compared with the price shown, which is the cheapest active variant's |
+| `inStock` | `true` keeps only products with an active variant in stock |
+| `option` | `option:value` codes, as `size:m,size:l` or repeated; at most 20 |
+| `sort` | `relevance`, `newest`, `price_asc`, `price_desc`. Defaults to `relevance` when searching, otherwise `newest` |
+| `page`, `limit` | `page` at most 1000; `limit` at most 50, default 24 |
+
+Filters combine, and unknown parameters such as tracking tags are ignored.
+
+- **Search:** matches words in the title and generic name, including other forms ("mugs" finds "mug"), and allows typos in the title ("samsng" finds "Samsung"). It uses Postgres, in English. It doesn't search brand names or descriptions, so sellers should put the brand in the title. A close spelling can bring in a weaker match, such as "phone" also finding "Headphones"; the exact match ranks first.
+- **Option filters:** values of one option are alternatives (M or L), and different options must all match. A single variant must match them all, along with `inStock`, so "size M, in stock" skips a product whose only size M is sold out.
+- **Price filters:** use the price shown, so `minPrice=1000` skips a product shown at ₹500 even if its largest size costs ₹2,000.
+- **Card price:** `price`, `mrp` and `discountPercent` come from the cheapest active variant, including an out-of-stock one. The discount is worked out from MRP and price, and rounded down so it's never overstated.
+
+Each product has its id, slug, title, category, brand, store, price, MRP, discount, main image and `inStock`. The response also has `pagination: { page, limit, total }`.
+
+### `GET /products/:slug`
+
+Everything a product page needs: description, highlights, specifications, category, brand, variants, images, `legal` (generic name, country of origin, manufacturer, packer, importer), `returns`, warranty and `seller` (store and legal name, logo, support email and phone).
+
+- `variants` has only those on sale, cheapest first, each with `options` as codes such as `{"size": "m"}`.
+- `options` lists the choices for the variant picker, in the order the admin set: only values used by variants on sale, with readable labels and colours. A seller's custom value uses its own label, and a deleted value keeps its label.
+
+**Hidden from customers:** exact stock (only `inStock`), SKU, barcode, HSN code, GST rate, weight and dimensions, GSTIN, payout and commission details, block details, and storage keys. Responses are built field by field, so a new column stays private until it's added on purpose.
+
+**Speed:** tested on 100,000 products with 3 variants each. Every query tried took about 210 ms or less. The total count is the slowest part. Cursor pagination can follow if this becomes a problem.
+
 ## Endpoints
 
 All paths start with `/api`.
@@ -192,6 +237,8 @@ All paths start with `/api`.
 | `GET /categories` | Public | Active categories as a tree |
 | `GET /categories/:id/variant-options` | Public | Options and values a variant in this category can use, including inherited ones; 404 if the category or a parent is inactive |
 | `GET /brands` | Public | Active brands by name; `q`, `page`, `limit` (at most 100, default 50) |
+| `GET /products` | Public | Search, filter, sort and page through products on sale |
+| `GET /products/:slug` | Public | One product on sale, with its variants, images, legal and seller details |
 | `GET /admin/categories` | Admin | Every category as a flat list, including inactive |
 | `POST /admin/categories` | Admin | Create a category |
 | `PATCH /admin/categories/:id` | Admin | Edit or move a category; `null` clears an optional field |
@@ -291,9 +338,10 @@ Errors use the format in [AUTH.md](AUTH.md).
 | `src/models/stock.model.js` | The only code that changes stock |
 | `src/middlewares/sellerProfile.js` | Requires a store, and refuses suspended sellers' changes |
 | `src/controllers/image.controller.js`, `src/models/productImage.model.js` | Uploads and product images |
+| `src/controllers/browse.controller.js`, `src/models/browse.model.js` | Public browsing, search and the visibility rules |
 | `src/services/storage/` | R2 and S3 drivers |
 | `src/utils/imageFile.js` | Allowed image types and the file checks |
 | `src/utils/variantOptions.js`, `gst.js` | Option checks and allowed GST rates |
 | `src/validators/catalog.validator.js`, `product.validator.js` | Request rules |
-| `tests/catalog.test.js`, `products.test.js`, `images.test.js`, `publish.test.js` | API tests |
+| `tests/catalog.test.js`, `products.test.js`, `images.test.js`, `publish.test.js`, `browse.test.js` | API tests |
 | `tests/storage.test.js` | The real storage code. Its upload tests run against an S3-compatible server when `TEST_S3_ENDPOINT`, `TEST_S3_ACCESS_KEY`, `TEST_S3_SECRET_KEY` and `TEST_S3_BUCKET` are set, and are skipped otherwise |
