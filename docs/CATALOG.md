@@ -220,7 +220,7 @@ Each product has its id, slug, title, category, brand, store, price, MRP, discou
 
 ### `GET /products/:slug`
 
-Everything a product page needs: description, highlights, specifications, category, brand, variants, images, `legal` (generic name, country of origin, manufacturer, packer, importer), `returns`, warranty and `seller` (store and legal name, logo, support email and phone).
+Everything a product page needs: description, highlights, specifications, category, brand, variants, images, `legal` (generic name, country of origin, manufacturer, packer, importer), `returns`, warranty and `seller` (store and legal name, logo, support email and phone, and address; see [ADDRESSES.md](ADDRESSES.md)).
 
 - `variants` has only those on sale, cheapest first, each with `options` as codes such as `{"size": "m"}`.
 - `options` lists the choices for the variant picker, in the order the admin set: only values used by variants on sale, with readable labels and colours. A seller's custom value uses its own label, and a deleted value keeps its label.

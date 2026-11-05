@@ -1194,7 +1194,7 @@
                 "profile"
               ]
             },
-            "description": "Shows the seller's profile, `verificationStatus` and any `rejectionReason`. 404 `NOT_FOUND` until a profile is created."
+            "description": "Shows the seller's profile, `verificationStatus` and any `rejectionReason`. 404 `NOT_FOUND` until a profile is created. `pickupAddress` has the full address, or `null` if none is set."
           },
           "response": []
         },
@@ -1914,7 +1914,7 @@
                 }
               ]
             },
-            "description": "Oldest first, first 100. `status` is pending (default), approved, rejected or suspended. Saves the first result as `sellerProfileId`."
+            "description": "Oldest first, first 100. `status` is pending (default), approved, rejected or suspended. Saves the first result as `sellerProfileId`. Each profile includes its full `pickupAddress`, to check against the GSTIN."
           },
           "response": [],
           "event": [
@@ -2195,7 +2195,7 @@
                 "{{productSlug}}"
               ]
             },
-            "description": "One product on sale, with its variants on sale, the `options` choices for a variant picker, images, legal details, returns and seller details. A hidden product returns 404, the same as one that doesn't exist.",
+            "description": "One product on sale, with its variants on sale, the `options` choices for a variant picker, images, legal details, returns and seller details. `seller.address` has the store's location, without its contact name or phone. A hidden product returns 404, the same as one that doesn't exist.",
             "auth": {
               "type": "noauth"
             }

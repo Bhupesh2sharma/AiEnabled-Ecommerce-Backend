@@ -1,5 +1,6 @@
 // Admin-only actions. admin.routes.js requires an admin login for everything here.
 
+const AddressModel = require("../models/address.model");
 const SellerProfileModel = require("../models/sellerProfile.model");
 const UserModel = require("../models/user.model");
 const ApiError = require("../utils/ApiError");
@@ -18,10 +19,20 @@ async function createAdmin(req, res) {
   res.status(201).json({ user: UserModel.toPublicUser(user) });
 }
 
+// Profiles with their pickup addresses in full, so admins can check them against the GSTIN during review.
+async function toAdminResponses(profiles) {
+  const ids = profiles.map((profile) => profile.pickup_address_id).filter(Boolean);
+  const addresses = new Map((await AddressModel.listByIds(ids)).map((address) => [address.id, address]));
+  return profiles.map((profile) => {
+    const pickup = addresses.get(profile.pickup_address_id);
+    return { ...SellerProfileModel.toAdminProfile(profile), pickupAddress: pickup ? AddressModel.toAddress(pickup) : null };
+  });
+}
+
 // GET /api/admin/sellers: lists seller profiles by status.
 async function listSellers(req, res) {
   const profiles = await SellerProfileModel.listByStatus(req.query.status);
-  res.json({ profiles: profiles.map(SellerProfileModel.toAdminProfile) });
+  res.json({ profiles: await toAdminResponses(profiles) });
 }
 
 // PATCH /api/admin/sellers/:id/verification: approves or rejects a seller profile.
@@ -34,7 +45,10 @@ async function decideSeller(req, res) {
     reason,
     adminId: req.user.id,
   });
-  if (profile) return res.json({ profile: SellerProfileModel.toAdminProfile(profile) });
+  if (profile) {
+    const [response] = await toAdminResponses([profile]);
+    return res.json({ profile: response });
+  }
 
   if (!(await SellerProfileModel.findById(id))) {
     throw new ApiError(404, "Seller profile not found", { code: "NOT_FOUND" });

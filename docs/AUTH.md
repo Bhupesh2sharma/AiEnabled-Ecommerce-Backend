@@ -141,7 +141,7 @@ A seller needs both email and phone verified before creating a profile, otherwis
 | Phone OTP | Add and verify with OTP | Already verified |
 
 Each seller has one profile. Sellers can't set their own status or commission, and a pickup address must
-be their own. `GET /seller/profile` shows their status and any rejection reason.
+be their own. `GET /seller/profile` shows their status, any rejection reason and their full `pickupAddress`.
 
 `PATCH /seller/profile` edits the profile, and sending `null` clears an optional field:
 

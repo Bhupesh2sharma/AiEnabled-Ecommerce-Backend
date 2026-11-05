@@ -37,6 +37,12 @@ async function findOwnPickupAddress(userId, addressId, client) {
   return address;
 }
 
+// A profile as its seller sees it, with the pickup address in full.
+async function toSellerResponse(profile) {
+  const [pickup] = profile.pickup_address_id ? await AddressModel.listByIds([profile.pickup_address_id]) : [];
+  return { ...SellerProfileModel.toPublicProfile(profile), pickupAddress: pickup ? AddressModel.toAddress(pickup) : null };
+}
+
 // Checks a profile edit leaves the store with a valid pickup address. Only runs on what's changing,
 // so an unrelated edit can't fail over something saved earlier.
 async function checkPickupChange(userId, profile, { pickupAddressId, taxId }, client) {
@@ -69,14 +75,14 @@ async function createProfile(req, res) {
     }
     return SellerProfileModel.create(req.user.id, req.body, client);
   });
-  res.status(201).json({ profile: SellerProfileModel.toPublicProfile(profile) });
+  res.status(201).json({ profile: await toSellerResponse(profile) });
 }
 
 // GET /api/seller/profile: shows the seller their profile, approval status and any rejection reason.
 async function getProfile(req, res) {
   const profile = await SellerProfileModel.findByUserId(req.user.id);
   if (!profile) throw profileNotFound();
-  res.json({ profile: SellerProfileModel.toPublicProfile(profile) });
+  res.json({ profile: await toSellerResponse(profile) });
 }
 
 // PATCH /api/seller/profile: edits the profile. Editing a rejected profile sends it back for review,
@@ -114,7 +120,7 @@ async function updateProfile(req, res) {
     };
   });
 
-  res.json({ profile: SellerProfileModel.toPublicProfile(updated), productsUnpublished });
+  res.json({ profile: await toSellerResponse(updated), productsUnpublished });
 }
 
 module.exports = { createProfile, getProfile, updateProfile };

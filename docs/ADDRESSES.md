@@ -73,6 +73,18 @@ A seller chooses one of their addresses with `pickupAddressId` on `POST` or `PAT
 - **Changing it doesn't send an approved store back for review,** because that would hide all its products over an ordinary move. Admins can see the address.
 - **Products already live:** publishing is checked once, so products published before this rule stay live with no pickup address. This can only be development data.
 
+## Who sees a pickup address
+
+| Who | Where | Sees |
+|---|---|---|
+| The seller | `pickupAddress` on `POST`, `GET` and `PATCH /seller/profile` | Everything |
+| Admins | `pickupAddress` on `GET /admin/sellers` and the review response | Everything, so they can check it against the GSTIN |
+| Customers | `seller.address` on `GET /products/:slug` | Address lines, landmark, city, state, PIN code and country |
+
+- **Private:** customers never see the contact name, phone or address id. `GET /products` doesn't include the address at all, and a hidden product's page shows nothing.
+- **Why it's public:** Rule 5(3)(a) of the Consumer Protection (E-Commerce) Rules, 2020 appears to require a seller's geographic address, but sources differ on when it must show. For a seller working from home, this publishes their home address. Have the lawyer confirm before launch.
+- **Always current:** the page reads the address live, so an edit shows at once. `seller.address` is `null` only for development products published before the address was required.
+
 ## Known gaps
 
 - **PIN code and state can disagree:** a user could choose the wrong state, which could mean the wrong tax at checkout. Checking needs PIN code data from India Post or a courier API, so it fits best with shipping.

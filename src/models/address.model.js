@@ -68,6 +68,12 @@ async function findOwned(id, userId, client = db) {
   return rows[0] ?? null;
 }
 
+// For showing stores' pickup addresses to their sellers and to admins, by id.
+async function listByIds(ids) {
+  const { rows } = await db.query("SELECT * FROM addresses WHERE id = ANY($1::uuid[])", [ids]);
+  return rows;
+}
+
 async function create(userId, fields, client) {
   const { rows } = await client.query(
     `INSERT INTO addresses (
@@ -121,4 +127,4 @@ async function promoteNewest(userId, kind, client) {
   );
 }
 
-module.exports = { toAddress, lockUser, listForUser, countForUser, findOwned, create, update, clearDefault, remove, promoteNewest };
+module.exports = { toAddress, lockUser, listForUser, countForUser, findOwned, listByIds, create, update, clearDefault, remove, promoteNewest };

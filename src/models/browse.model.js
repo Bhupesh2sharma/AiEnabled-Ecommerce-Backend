@@ -151,9 +151,14 @@ async function findBySlug(slug) {
             c.name AS category_name, c.slug AS category_slug,
             b.name AS brand_name, b.slug AS brand_slug, b.logo_url AS brand_logo_url,
             s.store_name, s.store_slug, s.logo_url AS store_logo_url,
-            s.legal_business_name, s.support_email, s.support_phone
+            s.legal_business_name, s.support_email, s.support_phone,
+            -- Only the location: the contact name and phone on a pickup address stay private.
+            a.id AS pickup_id, a.address_line1 AS pickup_line1, a.address_line2 AS pickup_line2,
+            a.landmark AS pickup_landmark, a.city AS pickup_city, a.state AS pickup_state,
+            a.postal_code AS pickup_postal_code, a.country_code AS pickup_country_code
      ${VISIBLE_FROM}
      LEFT JOIN brands b ON b.id = p.brand_id
+     LEFT JOIN addresses a ON a.id = s.pickup_address_id
      ${VISIBLE_WHERE} AND p.slug = $1`,
     [slug]
   );

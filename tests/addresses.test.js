@@ -799,3 +799,138 @@ test("clearing a pickup address while publishing can't leave a live product with
     await patchProfile({ pickupAddressId: pickup.id });
   }
 });
+
+// ---------- Who sees a store's pickup address ----------
+
+async function publicPage(productId) {
+  const { rows } = await db.query("SELECT slug FROM products WHERE id = $1", [productId]);
+  return { slug: rows[0].slug, page: await api("GET", `/products/${rows[0].slug}`, { as: null }) };
+}
+
+test("the seller sees the full pickup address on every profile response", async () => {
+  await db.query("UPDATE users SET phone = '+919000000097', phone_verified_at = NOW() WHERE id = $1", [userId]);
+  const address = await add({ landmark: "Near the bank" });
+
+  const created = await api("POST", "/seller/profile", {
+    body: { storeName: "S", storeSlug: "shown-store", legalBusinessName: "L", pickupAddressId: address.id },
+  });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.profile.pickupAddress.id, address.id);
+  assert.equal(created.body.profile.pickupAddress.fullName, "Asha Rao");
+
+  const read = await profile();
+  assert.deepEqual(read.pickupAddress, (await api("GET", `/addresses/${address.id}`)).body.address);
+  assert.equal(read.pickupAddressId, address.id);
+
+  const other = await add({ city: "Mumbai" });
+  const changed = await patchProfile({ pickupAddressId: other.id });
+  assert.equal(changed.body.profile.pickupAddress.city, "Mumbai");
+
+  const cleared = await patchProfile({ pickupAddressId: null });
+  assert.equal(cleared.body.profile.pickupAddress, null);
+  assert.equal((await profile()).pickupAddress, null);
+});
+
+test("an edit to the address shows on the profile straight away", async () => {
+  const address = await add();
+  await makeStore({ pickupAddressId: address.id });
+  await api("PATCH", `/addresses/${address.id}`, { body: { city: "Nagpur" } });
+  assert.equal((await profile()).pickupAddress.city, "Nagpur");
+});
+
+test("admins see each store's own full pickup address in review", async () => {
+  const admin = await makeUser("admin", "reviewer@example.com");
+  const pickup = await add({ city: "Pune" });
+  const mine = await makeStore({ status: "pending", pickupAddressId: pickup.id });
+
+  const secondToken = await makeUser("seller", "second-store@example.com");
+  const secondAddress = await add({ city: "Delhi", stateCode: "07", postalCode: "110001" }, secondToken);
+  const { rows } = await db.query("SELECT user_id FROM addresses WHERE id = $1", [secondAddress.id]);
+  const second = await db.query(
+    `INSERT INTO seller_profiles (user_id, store_name, store_slug, legal_business_name, pickup_address_id)
+     VALUES ($1, 'Second', 'second-store', 'L', $2) RETURNING id`,
+    [rows[0].user_id, secondAddress.id]
+  );
+  await makeUser("seller", "third-store@example.com");
+  const third = await db.query(
+    `INSERT INTO seller_profiles (user_id, store_name, store_slug, legal_business_name)
+     SELECT id, 'Third', 'third-store', 'L' FROM users WHERE email = 'third-store@example.com' RETURNING id`
+  );
+
+  const list = await api("GET", "/admin/sellers?status=pending", { as: admin });
+  assert.equal(list.status, 200);
+  const byId = new Map(list.body.profiles.map((row) => [row.id, row]));
+  assert.equal(byId.get(mine).pickupAddress.city, "Pune");
+  assert.equal(byId.get(mine).pickupAddress.phone, "+919876543210");
+  assert.equal(byId.get(mine).pickupAddress.fullName, "Asha Rao");
+  assert.equal(byId.get(second.rows[0].id).pickupAddress.city, "Delhi");
+  assert.equal(byId.get(second.rows[0].id).pickupAddress.stateCode, "07");
+  assert.equal(byId.get(third.rows[0].id).pickupAddress, null);
+
+  const decided = await api("PATCH", `/admin/sellers/${mine}/verification`, { as: admin, body: { status: "approved" } });
+  assert.equal(decided.status, 200);
+  assert.equal(decided.body.profile.pickupAddress.city, "Pune");
+});
+
+test("the admin list works with no stores at all", async () => {
+  const admin = await makeUser("admin", "empty-reviewer@example.com");
+  const res = await api("GET", "/admin/sellers?status=pending", { as: admin });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.profiles, []);
+});
+
+test("customers see the seller's location on the product page, but not the contact name or phone", async () => {
+  await add({ addressLine1: "Home, not the pickup address", city: "Goa" }); // an older address must not be shown
+  const pickup = await add({ fullName: "Private Person", phone: "+919111111111", addressLine2: "Camp", landmark: "Near the bank" });
+  const store = await makeStore({ pickupAddressId: pickup.id });
+  const product = await makeProduct(store, "active");
+
+  const { page } = await publicPage(product);
+  assert.equal(page.status, 200);
+  assert.deepEqual(page.body.product.seller.address, {
+    addressLine1: "12 MG Road",
+    addressLine2: "Camp",
+    landmark: "Near the bank",
+    city: "Pune",
+    state: "Maharashtra",
+    postalCode: "411001",
+    countryCode: "IN",
+  });
+  const json = JSON.stringify(page.body);
+  assert.equal(json.includes("Private Person"), false);
+  assert.equal(json.includes("+919111111111"), false);
+  assert.equal(json.includes(pickup.id), false);
+  assert.equal(json.includes("isDefault"), false);
+  assert.equal(page.body.product.seller.pickupAddress, undefined);
+});
+
+test("the product list doesn't include the seller's address", async () => {
+  const pickup = await add();
+  const store = await makeStore({ pickupAddressId: pickup.id });
+  await makeProduct(store, "active");
+  const list = await api("GET", "/products", { as: null });
+  assert.equal(list.body.pagination.total, 1);
+  assert.equal(JSON.stringify(list.body).includes("MG Road"), false);
+});
+
+test("the product page follows the store's current address, and a hidden product shows nothing", async () => {
+  const pickup = await add();
+  const store = await makeStore({ pickupAddressId: pickup.id });
+  const product = await makeProduct(store, "active");
+
+  await api("PATCH", `/addresses/${pickup.id}`, { body: { city: "Nagpur" } });
+  assert.equal((await publicPage(product)).page.body.product.seller.address.city, "Nagpur");
+
+  const paused = await makeProduct(store, "paused");
+  const hidden = (await publicPage(paused)).page;
+  assert.equal(hidden.status, 404);
+  assert.equal(JSON.stringify(hidden.body).includes("MG Road"), false);
+});
+
+test("a product published before the rule, with no pickup address, still has a page", async () => {
+  const store = await makeStore();
+  const product = await makeProduct(store, "active");
+  const { page } = await publicPage(product);
+  assert.equal(page.status, 200);
+  assert.equal(page.body.product.seller.address, null);
+});

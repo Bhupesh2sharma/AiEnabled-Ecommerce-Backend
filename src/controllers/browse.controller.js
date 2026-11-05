@@ -39,6 +39,20 @@ function toImage(image) {
   return { id: image.id, variantId: image.variant_id, url: image.url, altText: image.alt_text, isPrimary: image.is_primary };
 }
 
+// The seller's address customers see. Null only for development data published before it was required.
+function toSellerAddress(product) {
+  if (!product.pickup_id) return null;
+  return {
+    addressLine1: product.pickup_line1,
+    addressLine2: product.pickup_line2,
+    landmark: product.pickup_landmark,
+    city: product.pickup_city,
+    state: product.pickup_state,
+    postalCode: product.pickup_postal_code,
+    countryCode: product.pickup_country_code,
+  };
+}
+
 // What a product page offers for choosing a variant: only options and values its variants on sale
 // use, with readable labels. Sellers' custom values carry their own label on the variant.
 async function buildOptionChoices(categoryId, variants) {
@@ -127,6 +141,7 @@ async function getOne(req, res) {
         legalBusinessName: product.legal_business_name,
         supportEmail: product.support_email,
         supportPhone: product.support_phone,
+        address: toSellerAddress(product),
       },
     },
   });
