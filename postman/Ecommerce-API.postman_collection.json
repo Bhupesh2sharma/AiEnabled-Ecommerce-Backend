@@ -164,6 +164,11 @@
       "key": "productSlug",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "addressId",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -925,6 +930,200 @@
                 }
               }
             }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Addresses",
+      "description": "A customer's or seller's saved addresses. Uses `accessToken`, so log in as a customer or seller first. Run in order: creating saves the id that later requests use.",
+      "item": [
+        {
+          "name": "List States",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/states",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "states"
+              ]
+            },
+            "description": "State names and GST codes, for a form's dropdown. No login needed.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Address",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('addressId', pm.response.json().address.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "addresses"
+              ]
+            },
+            "description": "Saves `addressId`. The server fills in `state` from `stateCode`, so don't send it. `phone` must be an Indian mobile, and `postalCode` 6 digits. A first address becomes both defaults. `isDefaultShipping` and `isDefaultBilling` accept only `true`. 409 `ADDRESS_LIMIT_REACHED` at 20 addresses.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"Home\",\n  \"fullName\": \"Asha Rao\",\n  \"phone\": \"+919876543210\",\n  \"addressLine1\": \"12 MG Road\",\n  \"addressLine2\": \"Camp\",\n  \"landmark\": \"Near the bank\",\n  \"city\": \"Pune\",\n  \"stateCode\": \"27\",\n  \"postalCode\": \"411001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Addresses",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "addresses"
+              ]
+            },
+            "description": "My addresses, defaults first, then newest."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Address",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/addresses/{{addressId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "addresses",
+                "{{addressId}}"
+              ]
+            },
+            "description": "One of my addresses. 404 if it isn't yours."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Address",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/addresses/{{addressId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "addresses",
+                "{{addressId}}"
+              ]
+            },
+            "description": "Send only what changes. `null` clears `label`, `addressLine2` or `landmark`. Changing `stateCode` also changes `state`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"city\": \"Mumbai\",\n  \"stateCode\": \"27\",\n  \"postalCode\": \"400001\",\n  \"landmark\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Make Address the Default",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/addresses/{{addressId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "addresses",
+                "{{addressId}}"
+              ]
+            },
+            "description": "Clears the old default of each kind sent. Send one or both. A default can't be turned off directly: choose another address instead.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isDefaultShipping\": true,\n  \"isDefaultBilling\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Address",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/addresses/{{addressId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "addresses",
+                "{{addressId}}"
+              ]
+            },
+            "description": "Permanent. A default passes to the most recently added address."
           },
           "response": []
         }

@@ -32,7 +32,7 @@ src/
   middlewares/     notFound, errorHandler, validate (zod), auth (authenticate, authorize), rateLimit, sellerProfile
   validators/      zod request schemas
   services/        talks to external services: email/, sms/, storage/ (swappable drivers), google, OTP issuing
-  utils/           ApiError, asyncHandler, password, token, otp, session, slug, sqlUpdate, gst, variantOptions, imageFile
+  utils/           ApiError, asyncHandler, password, token, otp, session, slug, sqlUpdate, gst, variantOptions, imageFile, indianStates
   db/migrations/   timestamped .sql migration files
 scripts/migrate.js migration runner
 scripts/create-admin.js  creates the first admin
@@ -42,6 +42,7 @@ postman/          Postman collection (keep in sync with the API)
 docs/DATABASE.md   database schema documentation
 docs/AUTH.md       how authentication works
 docs/CATALOG.md    how the catalog works
+docs/ADDRESSES.md  how addresses work
 plans/             feature plans (e.g. authentication-plan.md)
 ```
 
@@ -76,6 +77,11 @@ must update it in the same change.
 
 `docs/CATALOG.md` describes how categories, brands and variant options work. Any change to catalog behaviour, endpoints,
 limits or error codes must update it in the same change.
+
+## Addresses: read and maintain `docs/ADDRESSES.md`
+
+`docs/ADDRESSES.md` describes how addresses work. Any change to address behaviour, endpoints, limits or error codes
+must update it in the same change.
 
 ## Postman collection
 

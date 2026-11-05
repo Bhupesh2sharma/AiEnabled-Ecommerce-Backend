@@ -197,6 +197,8 @@ A user's address book. Used for customer shipping/billing and seller pickup. Ind
 - Orders must **copy** the address, including `state_code`, into the order when placed, not just reference
   `addresses.id`, so editing or deleting an address never changes a past order.
 - `state_code` must come from `src/utils/indianStates.js`, which also supplies `state`.
+- At most 20 addresses per user. A user's first address becomes both defaults, and deleting a default passes it to the newest address.
+- Every change locks the user's row first (`FOR NO KEY UPDATE`).
 - Switching the default: unset the old default before setting the new one (same transaction),
   otherwise the unique index rejects it.
 
