@@ -839,3 +839,216 @@ test("parallel changes leave one of the quantities sent", async () => {
   assert.ok([2, 3, 4, 5, 6, 7].includes((await itemOf(variantId)).quantity));
   assert.equal(await rowCount(customer), 1);
 });
+
+// ---------- Merging a guest's cart ----------
+
+const merge = (items, as = token) => api("POST", "/cart/merge", { as, body: { items } });
+const quantityIn = (body, variantId) => body.items.find((item) => item.variantId === variantId)?.quantity;
+
+test("only customers can merge", async () => {
+  const seller = tokenFor(await makeUser("seller"), "seller");
+  const admin = tokenFor(await makeUser("admin"), "admin");
+  for (const [as, status] of [[seller, 403], [admin, 403], [undefined, 401]]) {
+    assert.equal((await api("POST", "/cart/merge", { as, body: { items: [] } })).status, status);
+  }
+});
+
+test("merging adds a guest's items and returns the whole cart", async () => {
+  const a = await onSale({ price: "100.00", mrp: "100.00" });
+  const b = await onSale({ price: "200.00", mrp: "200.00" });
+  const res = await merge([
+    { variantId: a.variantId, quantity: 2 },
+    { variantId: b.variantId, quantity: 1 },
+  ]);
+  assert.equal(res.status, 200);
+  assert.equal(quantityIn(res.body, a.variantId), 2);
+  assert.equal(quantityIn(res.body, b.variantId), 1);
+  assert.equal(res.body.totals.subtotal, "400.00");
+  assert.equal(res.body.canCheckout, true);
+  assert.deepEqual(res.body.skipped, []);
+});
+
+test("an empty merge changes nothing", async () => {
+  const { variantId } = await onSale();
+  await add(variantId, 2);
+  const res = await merge([]);
+  assert.equal(res.status, 200);
+  assert.equal(quantityIn(res.body, variantId), 2);
+  assert.deepEqual(res.body.skipped, []);
+});
+
+test("bad merges get a 400 and change nothing", async () => {
+  const { variantId } = await onSale();
+  const item = { variantId, quantity: 1 };
+  const bad = [
+    {},
+    { items: "x" },
+    { items: [{ variantId }] },
+    { items: [{ quantity: 1 }] },
+    { items: [{ variantId: "abc", quantity: 1 }] },
+    { items: [{ variantId, quantity: 0 }] },
+    { items: [{ variantId, quantity: 1.5 }] },
+    { items: [{ variantId, quantity: "2" }] },
+    { items: [{ variantId, quantity: 1000001 }] },
+    { items: [{ ...item, price: "1.00" }] },
+    { items: [item], extra: 1 },
+    { items: Array(51).fill(item) },
+  ];
+  for (const body of bad) {
+    const res = await api("POST", "/cart/merge", { as: token, body });
+    assert.equal(res.status, 400, JSON.stringify(body).slice(0, 60));
+  }
+  assert.equal(await rowCount(customer), 0);
+});
+
+test("one bad item doesn't refuse the rest: hidden, unknown and sold-out items are skipped", async () => {
+  const fine = await onSale();
+  const hidden = await onSale();
+  const soldOut = await onSale({ stock: 0 });
+  await db.query("UPDATE products SET status = 'paused' WHERE id = $1", [hidden.listing.productId]);
+
+  const res = await merge([
+    { variantId: hidden.variantId, quantity: 1 },
+    { variantId: fine.variantId, quantity: 1 },
+    { variantId: MISSING_ID, quantity: 1 },
+    { variantId: soldOut.variantId, quantity: 1 },
+  ]);
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.items.map((item) => item.variantId), [fine.variantId]);
+  assert.deepEqual(res.body.skipped, [hidden.variantId, MISSING_ID, soldOut.variantId]);
+});
+
+test("a quantity over the limit or the stock is lowered to fit", async () => {
+  const many = await onSale({ stock: 100 });
+  const few = await onSale({ stock: 3 });
+  const res = await merge([
+    { variantId: many.variantId, quantity: 50 },
+    { variantId: few.variantId, quantity: 8 },
+  ]);
+  assert.equal(quantityIn(res.body, many.variantId), 10);
+  assert.equal(quantityIn(res.body, few.variantId), 3);
+  assert.deepEqual(res.body.skipped, []);
+  assert.equal(res.body.canCheckout, true);
+});
+
+test("an item already in the cart keeps the larger quantity, not the sum", async () => {
+  const lower = await onSale();
+  const higher = await onSale();
+  await add(lower.variantId, 2);
+  await add(higher.variantId, 5);
+  const res = await merge([
+    { variantId: lower.variantId, quantity: 4 },
+    { variantId: higher.variantId, quantity: 3 },
+  ]);
+  assert.equal(quantityIn(res.body, lower.variantId), 4);
+  assert.equal(quantityIn(res.body, higher.variantId), 5);
+  assert.deepEqual(res.body.skipped, []);
+});
+
+test("merging never lowers what's already in the cart", async () => {
+  const { variantId } = await onSale({ stock: 10 });
+  await add(variantId, 6);
+  await db.query("UPDATE product_variants SET stock_quantity = 2 WHERE id = $1", [variantId]);
+  const res = await merge([{ variantId, quantity: 1 }]);
+  assert.equal(quantityIn(res.body, variantId), 6);
+  assert.equal(res.body.items[0].status, "not_enough_stock"); // left for the customer to fix
+});
+
+test("an item already in the cart that's no longer on sale is skipped, and stays", async () => {
+  const { listing, variantId } = await onSale();
+  await add(variantId, 2);
+  await db.query("UPDATE products SET status = 'paused' WHERE id = $1", [listing.productId]);
+  const res = await merge([{ variantId, quantity: 5 }]);
+  assert.deepEqual(res.body.skipped, [variantId]);
+  assert.equal(quantityIn(res.body, variantId), 2);
+  assert.equal(res.body.items[0].status, "unavailable");
+});
+
+test("repeating a merge changes nothing", async () => {
+  const a = await onSale();
+  const b = await onSale({ stock: 2 });
+  const items = [
+    { variantId: a.variantId, quantity: 3 },
+    { variantId: b.variantId, quantity: 9 },
+  ];
+  const first = await merge(items);
+  const second = await merge(items);
+  const third = await merge(items);
+  assert.deepEqual(second.body, first.body);
+  assert.deepEqual(third.body, first.body);
+});
+
+test("a variant sent twice counts once, at its larger quantity", async () => {
+  const { variantId } = await onSale();
+  const res = await merge([
+    { variantId, quantity: 2 },
+    { variantId, quantity: 7 },
+    { variantId, quantity: 3 },
+  ]);
+  assert.equal(res.body.items.length, 1);
+  assert.equal(quantityIn(res.body, variantId), 7);
+  assert.deepEqual(res.body.skipped, []);
+});
+
+test("items past the 50-item limit are skipped, while more of an existing item still fits", async () => {
+  const listing = await makeListing();
+  const variants = [];
+  for (let i = 0; i < 53; i += 1) variants.push(await addVariant(listing, { options: { n: String(i) } }));
+  for (const id of variants.slice(0, 48)) await addRow(customer, id);
+
+  const res = await merge([
+    { variantId: variants[48], quantity: 1 },
+    { variantId: variants[49], quantity: 1 },
+    { variantId: variants[50], quantity: 1 },
+    { variantId: variants[0], quantity: 4 },
+    { variantId: variants[51], quantity: 1 },
+  ]);
+  assert.equal(res.status, 200);
+  assert.equal(await rowCount(customer), 50);
+  assert.deepEqual(res.body.skipped, [variants[50], variants[51]]);
+  assert.equal(quantityIn(res.body, variants[0]), 4);
+});
+
+test("merging only touches the customer's own cart", async () => {
+  const { variantId } = await onSale();
+  const other = tokenFor(await makeUser());
+  await add(variantId, 2, other);
+  await merge([{ variantId, quantity: 5 }]);
+  assert.equal((await getCart(other)).items[0].quantity, 2);
+  assert.equal((await itemOf(variantId)).quantity, 5);
+});
+
+test("merged items keep following the cart's rules afterwards", async () => {
+  const { variantId } = await onSale({ stock: 20 });
+  await merge([{ variantId, quantity: 9 }]);
+  assert.equal((await add(variantId, 2)).body.code, "QUANTITY_LIMIT_REACHED");
+  assert.equal((await change(variantId, 10)).status, 200);
+  assert.equal((await remove(variantId)).status, 200);
+  assert.equal(await rowCount(customer), 0);
+});
+
+test("parallel merges can't pass the 50-item limit", async () => {
+  const listing = await makeListing();
+  const variants = [];
+  for (let i = 0; i < 12; i += 1) variants.push(await addVariant(listing, { options: { n: String(i) } }));
+  for (let i = 0; i < 45; i += 1) await addRow(customer, await addVariant(listing, { options: { m: String(i) } }));
+  const results = await Promise.all(variants.map((id) => merge([{ variantId: id, quantity: 1 }])));
+  assert.ok(results.every((res) => res.status === 200));
+  assert.equal(await rowCount(customer), 50);
+});
+
+test("merging waits for a change in progress", async () => {
+  const { variantId } = await onSale();
+  let finished = false;
+  let request;
+  await db.transaction(async (client) => {
+    await UserModel.lockForChange(customer, client);
+    request = merge([{ variantId, quantity: 1 }]).then((res) => {
+      finished = true;
+      return res;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(finished, false);
+  });
+  assert.equal((await request).status, 200);
+});

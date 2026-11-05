@@ -1255,6 +1255,39 @@
             "description": "Removes every item and returns the empty cart. Emptying an empty cart is fine."
           },
           "response": []
+        },
+        {
+          "name": "Merge Guest Cart",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/cart/merge",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "cart",
+                "merge"
+              ]
+            },
+            "description": "Adds what a guest put in their cart before logging in, at most 50 items. Returns the whole cart, plus `skipped`: variant ids that weren't added because they're hidden, unknown, sold out or past the 50-item limit. A quantity over 10 or the stock is lowered to fit. An item already in the cart keeps the larger quantity. Repeating it changes nothing.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    { \"variantId\": \"{{variantId}}\", \"quantity\": 2 }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
         }
       ]
     },

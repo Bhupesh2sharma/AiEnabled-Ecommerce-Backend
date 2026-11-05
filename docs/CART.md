@@ -8,8 +8,6 @@ How customers' carts work. The code is the source of truth.
 **Related:** [DATABASE.md](DATABASE.md) (tables), [CATALOG.md](CATALOG.md) (what's on sale) and
 [the Postman collection](../postman/Ecommerce-API.postman_collection.json) (runnable requests).
 
-**Built so far:** viewing a cart, adding, changing and removing items, and emptying it. Merging a guest's cart comes next.
-
 ## How it works
 
 - **Only customers have a cart.** Accounts have one role, so a seller who wants to buy needs a separate customer account. This also stops a seller ordering their own products to fake sales.
@@ -29,6 +27,7 @@ All paths start with `/api`. Sellers and admins get 403.
 | `PATCH /cart/items/:variantId` | Customer | Set an item's quantity, with `quantity` |
 | `DELETE /cart/items/:variantId` | Customer | Remove one item, whatever its status |
 | `DELETE /cart` | Customer | Empty the cart. Emptying an empty cart is fine |
+| `POST /cart/merge` | Customer | Add a guest's items after login, with `items` |
 
 Each of these returns the whole cart, so the frontend needs no second request.
 
@@ -84,6 +83,29 @@ Each of these returns the whole cart, so the frontend needs no second request.
 - **Lowering** is allowed for any item on sale, so a customer can fix a `not_enough_stock` item, even in steps.
 - **Raising** must fit the stock.
 - **An `unavailable` item** can't be changed, only removed.
+
+## Guests
+
+Guests have no cart on the server, so nothing is stored for anonymous visitors. The frontend keeps a guest's cart in the browser, and sends it after login:
+
+```json
+POST /api/cart/merge
+{ "items": [{ "variantId": "...", "quantity": 2 }] }
+```
+
+It returns the whole cart, plus `skipped`, a list of variant ids that weren't added, so the frontend can tell the customer. The frontend should then clear its copy.
+
+Browser data can be old, so one bad item doesn't refuse the rest:
+
+| The item | What happens |
+|---|---|
+| Hidden, unknown or sold out | Skipped. If it's already in the cart, it stays there unchanged |
+| A quantity over 10 or the stock | Lowered to fit |
+| Already in the cart | Keeps the larger quantity, not the sum, so logging in twice doesn't double it. An existing quantity is never lowered |
+| Sent twice | Counts once, at its larger quantity |
+| Past the 50-item limit | Skipped. More of an item already in the cart still fits |
+
+At most 50 items per request. A badly formed request, such as an invalid id, is a 400 and changes nothing. Repeating a merge changes nothing.
 
 ## Limits
 

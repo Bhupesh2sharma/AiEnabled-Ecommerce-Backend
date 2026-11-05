@@ -55,17 +55,28 @@ async function listForUser(userId, client = db) {
   return rows;
 }
 
-// A variant's stock if it's on sale, or null if customers can't buy it for any reason.
-async function findStockIfOnSale(variantId, client) {
+// Each variant's stock, for those on sale. A variant customers can't buy, for any reason, isn't in the result.
+async function findStocksOnSale(variantIds, client) {
   const { rows } = await client.query(
     `WITH RECURSIVE ${VISIBLE_CATEGORIES}
-     SELECT sale.stock_quantity
+     SELECT sale.id, sale.stock_quantity
      ${VISIBLE_FROM}
      JOIN product_variants sale ON sale.product_id = p.id
-     ${VISIBLE_WHERE} AND sale.id = $1 AND sale.deleted_at IS NULL AND sale.is_active`,
-    [variantId]
+     ${VISIBLE_WHERE} AND sale.id = ANY($1::uuid[]) AND sale.deleted_at IS NULL AND sale.is_active`,
+    [variantIds]
   );
-  return rows[0]?.stock_quantity ?? null;
+  return new Map(rows.map((row) => [row.id, row.stock_quantity]));
+}
+
+// One variant's stock if it's on sale, otherwise null.
+async function findStockIfOnSale(variantId, client) {
+  return (await findStocksOnSale([variantId], client)).get(variantId) ?? null;
+}
+
+// variant id -> quantity, for everything in the user's cart.
+async function findQuantities(userId, client) {
+  const { rows } = await client.query("SELECT variant_id, quantity FROM cart_items WHERE user_id = $1", [userId]);
+  return new Map(rows.map((row) => [row.variant_id, row.quantity]));
 }
 
 async function findQuantity(userId, variantId, client) {
@@ -103,4 +114,14 @@ async function clear(userId, client) {
   await client.query("DELETE FROM cart_items WHERE user_id = $1", [userId]);
 }
 
-module.exports = { listForUser, findStockIfOnSale, findQuantity, countItems, setQuantity, removeItem, clear };
+module.exports = {
+  listForUser,
+  findStocksOnSale,
+  findStockIfOnSale,
+  findQuantities,
+  findQuantity,
+  countItems,
+  setQuantity,
+  removeItem,
+  clear,
+};

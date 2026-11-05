@@ -167,4 +167,43 @@ async function clearCart(req, res) {
   res.json(await buildCart(req.user.id));
 }
 
-module.exports = { getCart, addItem, changeItem, removeItem, clearCart };
+// POST /api/cart/merge: adds what a guest put in their cart before logging in. The browser may hold old
+// data, so one bad item doesn't refuse the rest: it's lowered to fit, or skipped and listed. Keeping the
+// larger quantity, rather than adding, means logging in twice doesn't double anything.
+async function mergeCart(req, res) {
+  // A variant sent twice counts once, at its larger quantity.
+  const wanted = new Map();
+  for (const { variantId, quantity } of req.body.items) {
+    wanted.set(variantId, Math.max(wanted.get(variantId) ?? 0, quantity));
+  }
+
+  const skipped = await db.transaction(async (client) => {
+    await UserModel.lockForChange(req.user.id, client);
+
+    const stocks = await CartModel.findStocksOnSale([...wanted.keys()], client);
+    const inCart = await CartModel.findQuantities(req.user.id, client);
+    let count = inCart.size;
+    const notAdded = [];
+
+    for (const [variantId, quantity] of wanted) {
+      const stock = stocks.get(variantId) ?? 0; // hidden or unknown is treated like sold out
+      const current = inCart.get(variantId);
+
+      if (stock === 0 || (current === undefined && count >= MAX_ITEMS)) {
+        notAdded.push(variantId);
+      } else {
+        const fitted = Math.min(quantity, MAX_PER_ITEM, stock);
+        // An existing quantity is left for the customer to change, even if it has since run short.
+        if (current === undefined || fitted > current) {
+          await CartModel.setQuantity(req.user.id, variantId, fitted, client);
+        }
+        if (current === undefined) count += 1;
+      }
+    }
+    return notAdded;
+  });
+
+  res.json({ ...(await buildCart(req.user.id)), skipped });
+}
+
+module.exports = { getCart, addItem, changeItem, removeItem, clearCart, mergeCart };

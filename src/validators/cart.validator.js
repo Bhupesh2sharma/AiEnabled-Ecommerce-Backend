@@ -9,6 +9,13 @@ const addItem = z.strictObject({ variantId: z.uuid("Invalid id"), quantity: quan
 
 const changeItem = z.strictObject({ quantity });
 
+// A quantity over the limit is lowered rather than refused, so only an absurd one is a 400.
+const mergeCart = z.strictObject({
+  items: z
+    .array(z.strictObject({ variantId: z.uuid("Invalid id"), quantity: z.number().int().min(1).max(1000000) }))
+    .max(50, "At most 50 items"),
+});
+
 const variantParam = z.object({ variantId: z.uuid("Invalid id") });
 
-module.exports = { addItem, changeItem, variantParam };
+module.exports = { addItem, changeItem, mergeCart, variantParam };
