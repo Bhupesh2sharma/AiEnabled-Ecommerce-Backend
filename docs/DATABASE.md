@@ -17,6 +17,7 @@ what each table is for, how tables are grouped, and how they relate.
 | Seller | `seller_profiles` | Storefront, business/KYC, payout and approval details for sellers |
 | Catalog | `categories`, `brands`, `variant_options`, `variant_option_values`, `category_variant_options` | What can be sold: the category tree, brands and the variant choices each category offers. Admin-managed |
 | Products | `products`, `product_variants`, `product_images`, `stock_movements` | Sellers' listings, what's actually bought, photos and stock history |
+| Cart | `cart_items` | What customers intend to buy. Holds no prices or stock |
 | System | `schema_migrations` | Tracks which migration files have been applied (managed by `scripts/migrate.js`) |
 
 ## Relationships
@@ -42,6 +43,8 @@ erDiagram
     product_variants ||--o{ product_images : "may show"
     product_variants ||--o{ stock_movements : "logs"
     users ||--o{ stock_movements : "made by"
+    users ||--o{ cart_items : "has in cart"
+    product_variants ||--o{ cart_items : "in carts"
 ```
 
 | From | To | Type | FK column | On delete |
@@ -65,6 +68,8 @@ erDiagram
 | `product_images` | `product_variants` | many-to-one | `product_images (variant_id, product_id)` | SET NULL on `variant_id` |
 | `stock_movements` | `product_variants` | many-to-one | `stock_movements.variant_id` | CASCADE |
 | `stock_movements` | `users` | many-to-one | `stock_movements.created_by` | SET NULL |
+| `cart_items` | `users` | many-to-one | `cart_items.user_id` | CASCADE |
+| `cart_items` | `product_variants` | many-to-one | `cart_items.variant_id` | CASCADE |
 
 ## Conventions (apply to every table)
 
@@ -118,7 +123,7 @@ separate tables (e.g. `seller_profiles`).
 - Taking over an unverified email (Google link or email OTP login) clears `password_hash` and revokes
   all sessions, so whoever registered that email without proving it loses access.
 
-**Referenced by:** `auth_providers.user_id`, `refresh_tokens.user_id`, `addresses.user_id`, `seller_profiles.user_id`, `seller_profiles.verified_by`, `products.blocked_by`, `stock_movements.created_by`.
+**Referenced by:** `auth_providers.user_id`, `refresh_tokens.user_id`, `addresses.user_id`, `seller_profiles.user_id`, `seller_profiles.verified_by`, `products.blocked_by`, `stock_movements.created_by`, `cart_items.user_id`.
 
 ### `auth_providers`
 Migration: `20261104120742_auth_schema.sql`
@@ -434,7 +439,7 @@ What's actually bought. Every product has at least one; a product with no option
 - `gst_rate` must be a current GST rate, and 0 for a seller with no GSTIN.
 - Stock changes only through `src/models/stock.model.js`, which updates the variant and adds a `stock_movements` row in one transaction.
 
-**Referenced by:** `product_images (variant_id, product_id)`, `stock_movements.variant_id`.
+**Referenced by:** `product_images (variant_id, product_id)`, `stock_movements.variant_id`, `cart_items.variant_id`.
 
 ### `product_images`
 Migration: `20261104141117_create_product_images.sql`
@@ -476,6 +481,28 @@ History of every stock change. Rows are only ever added.
 
 **Rules (enforced in application code, not the DB)**
 - `initial` is allowed only while a variant has no history. Only `correction` can remove stock.
+
+---
+
+## Cart
+
+### `cart_items`
+Migration: `20261105115728_create_cart_items.sql`
+
+A customer's cart is their rows here, one per variant. Unlike most tables, the primary key is `(user_id, variant_id)`, and rows are hard deleted, because a removed item needs no history.
+
+| Column | Type | Notes |
+|---|---|---|
+| `user_id` | UUID | PK, FK → `users.id`, CASCADE |
+| `variant_id` | UUID | PK, FK → `product_variants.id`, CASCADE. A soft-deleted variant's row stays, and shows as unavailable |
+| `quantity` | INTEGER | 1 to 10 (CHECK) |
+| `created_at` / `updated_at` | TIMESTAMPTZ | standard |
+
+**Rules (enforced in application code, not the DB)**
+- Only customers have a cart.
+- At most 50 rows per user.
+- Prices aren't stored, so a cart always shows the current price. Stock isn't held until an order is placed.
+- Orders must recheck every item when placed, and **copy** price, GST rate and HSN code into the order.
 
 ---
 
